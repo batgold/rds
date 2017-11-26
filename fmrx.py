@@ -1,9 +1,9 @@
 from rtlsdr import RtlSdr
-import numpy as np
 import matplotlib
-import scipy.signal as signal
 import matplotlib.pyplot as plt
+import numpy as np
 import pyaudio
+import scipy.signal as signal
 
 sdr = RtlSdr()
 

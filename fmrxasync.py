@@ -1,6 +1,5 @@
 from rtlsdr import RtlSdr
 import numpy as np
-import matplotlib
 import scipy.signal as signal
 import matplotlib.pyplot as plt
 import pyaudio
@@ -22,8 +21,9 @@ class fm_demod(threading.Thread):
         while(1):
             x0 = dataQue.get()
             dataQue.task_done()
+
             x1 = x0 * np.exp(-1.0j*2.0*np.pi*fo/fs*np.arange(len(x0)))
-            # x1 = np.array(stream[range(2000,N-2000-1)]) #first 2000 samples are bogus
+            # check 1st 2000 samples, they seem bogus
             x2 = signal.lfilter(lpf, 1.0, x1)
             x3 = signal.decimate(x2, dec_rate)
 
@@ -33,8 +33,7 @@ class fm_demod(threading.Thread):
             x5 = signal.lfilter(dmf_tap1,dmf_tap2,x4)
             x6 = signal.decimate(x5, dec_audio)*8000
             x7 = x6.astype("int16")
-            # plt.psd(x4, NFFT=2048, Fs=fs)
-            # plt.show()
+
             audioQue.put(x7)
             audioQue.join()
 
@@ -55,11 +54,9 @@ class play_radio(threading.Thread):
 
 fs = int(1.4e6) #225-300 kHz and 900 - 2032 kHz
 fo = int(0.25e6) #250 kHz offset, to remove DC when sampling
-N = int(512*512)
-# N = int(256*1024*16)
 fc = int(105.3e6) - fo
-# fc = int(88.5e6) - fo
-d=int(0)
+N = int(512*512) #multiple of 512
+d = int(0)
 
 # filter
 lpf_taps = 64
@@ -78,9 +75,9 @@ dmf_tap2 = [1,-dmf_shape]
 fa = int(48e3)
 dec_audio = int(fs/dec_rate/fa)
 fs_audio = fs/dec_audio
-
 p = pyaudio.PyAudio()
 
+# init queues
 dataQue = Queue.Queue([1])
 audioQue = Queue.Queue([1])
 
@@ -94,6 +91,7 @@ sdr.sample_rate = fs
 sdr.center_freq = fc
 sdr.gain = 'auto'
 
+# begin reading from device
 sdr.read_samples_async(sdr_stream, N)
 sdr.close()
 p.terminate()
