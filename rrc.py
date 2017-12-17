@@ -6,9 +6,9 @@ import scipy.signal as signal
 import matplotlib.pyplot as plt
 import commpy
 
-N = int(54)
-T = 1/1187.5/2
-fs = 228e3/24
+N = int(120)
+T = 1/1187.5*4/8
+fs = 228e3/12
 alfa = 1
 
 t,h = commpy.filters.rrcosfilter(N,alfa,T,fs)
