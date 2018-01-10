@@ -13,7 +13,7 @@ from rtlsdr import RtlSdr
 F_SAMPLE = int(228e3)       # 225-300 kHz and 900 - 2032 kHz
 #F_CENTER = int(96.5e6)      # FM Station, need strong RDBS signal, SF (KOIT XMAS)
 #F_CENTER = int(97.7e6)      # FM Station, PAL
-F_CENTER = int(97.5e6)      # FM Station, WV
+F_CENTER = int(104.5e6)      # FM Station, WV
 F_PILOT = int(19e3)         # pilot tone, 19kHz from Fc
 N_SAMPLES = int(512*512*3)  # must be multiple of 512, should be a multiple of 16384 (URB size)
 DEC_RATE = int(12)          # RBDS rate 1187.5 Hz. Thus 228e3/1187.5/24 = 8 sample/sym
@@ -240,9 +240,8 @@ class Decode:
 
     def __init__(self, bits, bit_start):
         self.bits = bits
-        self.ps = ['_','_','_','_']
+        self.ps = ['_','_','_','_''_','_','_','_']
         self.rt = ['_','_','_','_','_','_','_','_','_','_','_','_','_','_','_','_']
-        self.char_map = self.get_char_map()
 
         for bit in bit_start:
             self.set_blocks(bit)
@@ -257,15 +256,15 @@ class Decode:
                 self.cc = self.text_segment()
                 self.radiotext()
 
-            print pi, gt, pt, self.cc, ''.join(self.ps), ''.join(self.rt)
+            print pi, gt, pt, self.cc, ''.join(self.ps), ' / ', ''.join(self.rt)
             print self.C
             print self.D
 
     def set_blocks(self, bit):
         self.A = 1 * self.bits[bit     :bit + 16]
         self.B = 1 * self.bits[bit + 26:bit + 42]
-        self.C = 1 * self.bits[bit + 53:bit + 69]
-        self.D = 1 * self.bits[bit + 79:bit + 95]
+        self.C = 1 * self.bits[bit + 52:bit + 68]
+        self.D = 1 * self.bits[bit + 78:bit + 94]
 
     def prog_id(self):
         """Program Identification"""
@@ -312,31 +311,17 @@ class Decode:
         return self.bit2int(self.B[-4:])
 
     def prog_service(self):
-        odd_col = self.bit2int(self.D[0:3]) - 2
-        odd_row = self.bit2int(self.D[4:7])
-        evn_col = self.bit2int(self.D[8:11]) - 2
-        evn_row = self.bit2int(self.D[-4:])
-
-        evn_char = self.char_map[evn_row][evn_col]
-        odd_char = self.char_map[odd_row][odd_col]
-        self.ps[self.cc] = evn_char + odd_char
+        ps1 = self.bit2int(self.D[0:8])
+        ps2 = self.bit2int(self.D[8:16])
+        self.ps[self.cc] = chr(ps1) + chr(ps2)
 
     def radiotext(self):
-        col1 = self.bit2int(self.C[0:3]) - 2
-        row1 = self.bit2int(self.C[4:7])
-        col2 = self.bit2int(self.C[8:11]) - 2
-        row2 = self.bit2int(self.C[-4:])
-        col3 = self.bit2int(self.D[0:3]) - 2
-        row3 = self.bit2int(self.D[4:7]) - 2
-        col4 = self.bit2int(self.D[8:11])
-        row4 = self.bit2int(self.D[-4:])
+        rt1 = self.bit2int(self.C[0:8])
+        rt2 = self.bit2int(self.C[8:16])
+        rt3 = self.bit2int(self.D[0:8])
+        rt4 = self.bit2int(self.D[8:16])
 
-        rt1 = self.char_map[row1][col1]
-        rt2 = self.char_map[row2][col2]
-        rt3 = self.char_map[row3][col3]
-        rt4 = self.char_map[row4][col4]
-
-        self.rt[self.cc] = rt1 + rt2 + rt3 + rt4
+        self.rt[self.cc] = chr(rt1) + chr(rt2) + chr(rt3) + chr(rt4)
 
     def bit2int(self, bits):
         """Convert bit string to integer"""
@@ -344,24 +329,6 @@ class Decode:
         for bit in bits:
             word = (word<<1) | bit
         return int(word)
-
-    def get_char_map(self):
-        return [['', '0', '@', 'P', '~', 'p'],
-                ['', '1', 'A', 'Q', 'a', 'q'],
-                ['', '2', 'B', 'R', 'b', 'r'],
-                ['', '3', 'C', 'S', 'c', 's'],
-                ['', '4', 'D', 'T', 'd', 't'],
-                ['', '5', 'E', 'U', 'e', 'u'],
-                ['', '6', 'F', 'V', 'f', 'v'],
-                ['', '7', 'G', 'W', 'g', 'w'],
-                ['', '8', 'H', 'X', 'h', 'x'],
-                ['', '9', 'I', 'Y', 'i', 'y'],
-                ['', '10', 'J', 'Z', 'j', 'z'],
-                ['', '11', 'K', '*', 'k', '*'],
-                [',', '12', 'L', '*', 'l', '*'],
-                ['-', '13', 'M', '*', 'm', '*'],
-                ['.', '14', 'N', '*', 'n', '*'],
-                ['/', '15', 'O', '*', 'o', '*']]
 
     def print_msg(self):
         return None
@@ -411,7 +378,7 @@ class Plot:
         plt.show()
 
 
-live = False
+live = True
 
 if live:
     sdr = RtlSdr()
