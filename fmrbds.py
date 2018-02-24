@@ -66,10 +66,8 @@ class Filters:
 
     def build_clk(self):
         """Infinite (impulse response) Peak Filter at Symbol Rate 1187.5Hz"""
-        #w = F_SYM / (float(F_SAMPLE) / float(DEC_RATE) / 2.0)
-        w = (F_PILOT*3 + F_SYM) / float(F_SAMPLE / 2.0)
-        #q = w / 5.0 * F_SAMPLE * DEC_RATE        # Q = f/bw, BW = 5 Hz
-        q = w / 5.0 * F_SAMPLE          # Q = f/bw, BW = 5 Hz
+        w = F_SYM / float(F_SAMPLE / DEC_RATE / 2.0)
+        q = w / 5.0 * F_SAMPLE * DEC_RATE         # Q = f/bw, BW = 5 Hz
         b, a = sig.iirpeak(w, q)
         return b, a
 
@@ -81,16 +79,6 @@ class Demod:
         print("DEMODULATING")
         self.data = data
         self.phz_offset = phz_offset
-        self.fm = []
-        self.crr = []
-        self.clk = []
-        self.clk_len = []
-        self.bb = []
-        self.I = []
-        self.Q = []
-        self.sym = []
-        self.sym2 = []
-        self.bits = []
         self.demod_fm()
         self.carrier_recovery()
         self.cull_rds()
@@ -117,60 +105,40 @@ class Demod:
         print("...MOVE TO BASEBAND")
         x2 = sig.lfilter(filter.bpf[0], filter.bpf[1], self.fm)     # BPF
         x3 = 1000 * x2 * self.crr                                 # mix signal down by 57 kHz
-        #self.bb = x3[::DEC_RATE]
         self.bb = sig.decimate(x3, DEC_RATE, zero_phase=True)      # Decimate
-        self.bb = self.bb[SPS*2:]
 
     def pulse_shape(self):
         """STEP 2.4: APPLY R.R.COSINE FILTER"""
         print("...PULSE SHAPE")
         x4 = 90 * sig.lfilter(filter.rrc, 1, self.bb)     #gain of 5 seems gud
-        self.I = nmp.real(x4)
-        self.Q = nmp.imag(x4)
-        self.amp = self.I
-        self.phz = nmp.arctan2(self.I, self.Q)
+        self.amp = nmp.absolute(x4)
+        self.phz = nmp.angle(x4)
 
     def clock_recovery(self):
         """STEP 2.5: DETERMINE SYMBOL CLOCK RATE"""
         print("...RECOVER CLOCK")
-        #x6 = 1000 * sig.lfilter(filter.clk[0], filter.clk[1], self.bb)
-        x6 = sig.lfilter(filter.clk[0], filter.clk[1], self.fm)
-        x7 = 1000 * x6 * self.crr
-        x8 = nmp.real(x7)
-        x8 = sig.decimate(x7, DEC_RATE, zero_phase=True)
-        x8 = x8[SPS*2:]
-        x9 = (x8 > 0)
-        #x10 = x9[1:]
-        self.clk = x9
+        x5 = sig.lfilter(filter.clk[0], filter.clk[1], self.bb)
+        self.clk = (x5 > 0)
 
     def symbol_decode(self):
         """STEP 2.6: SAMPLE SYMBOLS AT CLOCK RATE"""
         print("...DECODING SYMBOLS")
-        #n = 459*16
-        n = 0
-        while n < 0:
-        #while n < len(self.amp) - SPS:
-        #while n < 459*16+16*7:
-            if self.clk[n] == 1:       #capture signal at clock ON
-                symbol = []
-                m = 0
-                while self.clk[n+m] == 1:
-                    symbol.append(self.amp[n+m])
-                    m += 1
-                symbol.remove(max(symbol))
-                symbol.remove(min(symbol))
-                symbol = nmp.sum(symbol)
-                #self.sym.append(symbol/80)
-                self.sym.append((symbol > 0))
-                self.clk_len.append(m)
-                n += m
-            else:
-                n += 1                  #run through OFF
+        toc = 0
+        m = 0
+        x6 = []
+        x7 = []
+        for n, tic in enumerate(self.clk):
+            if abs(1*tic - toc):
+                toc = tic
+                m = n
+                x6.append(self.amp[n])
+                x7.append(self.phz[n])
+        x8 = nmp.asarray(x7)  #use phase
+        x9 = (x8 > 0)
+        self.sym = x9[self.phz_offset::2]
 
-        x5 = self.phz[self.phz_offset::SPS]
-        self.I = self.I[self.phz_offset::SPS]
-        self.Q = self.Q[self.phz_offset::SPS]
-        self.sym = (x5 > 0)
+        self.I = x6[self.phz_offset::2] * nmp.cos(x7[self.phz_offset::2])
+        self.Q = x6[self.phz_offset::2] * nmp.sin(x7[self.phz_offset::2])
 
     def bit_decode(self):
         """STEP 2.7: DECODE MANCHESTER SYMBOLS"""
@@ -255,6 +223,8 @@ class Decode:
             elif gt == '2A':
                 self.cc = self.text_segment()
                 self.radiotext()
+            else:
+                self.cc = 0
 
             print pi, gt, pt, self.cc, ''.join(self.ps), ' / ', ''.join(self.rt)
             print self.C
@@ -338,17 +308,16 @@ class Plot:
     """PLOT"""
 
     def __init__(self, data):
+        self.data = data
         self.amp = data.amp
         self.phz = data.phz
-        self.I = data.I
-        self.Q = data.Q
         self.sym = data.sym
         self.bit = data.bits
         self.clk = data.clk
 
     def constellation(self):
         plt.figure()
-        plt.plot(self.I, self.Q, 'b.', alpha=0.5)
+        plt.plot(self.data.I, self.data.Q, 'b.', alpha=0.5)
         plt.show()
 
     def time_domain(self, T1):
@@ -365,20 +334,24 @@ class Plot:
         plt.plot(self.clk)
         plt.show()
 
-    def fm(self, fm):
+    def fm(self):
         plt.figure()
-        plt.psd(fm, NFFT=2048, Fs=F_SAMPLE/1000)
+        plt.psd(self.data.fm, NFFT=2048, Fs=F_SAMPLE/1000)
+        plt.psd(self.clk, NFFT=2048, Fs=F_SAMPLE/1000)
+        plt.ylim([-50, 0])
+        plt.yticks(nmp.arange(-50, 0, 10))
         plt.show()
 
-    def bb(self, bb):
+    def bb(self):
         plt.figure()
-        plt.psd(bb, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
+        plt.psd(self.data.bb, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
+        plt.psd(self.clk, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
         plt.ylim([-25, 0])
         plt.yticks(nmp.arange(-25, 0, 5))
         plt.show()
 
 
-live = True
+live = False
 
 if live:
     sdr = RtlSdr()
@@ -393,31 +366,14 @@ else:
 
 
 filter = Filters()
-data = Demod(smp_rtl, 4)
+data = Demod(smp_rtl, 3)
 
 group_indx = Block_Sync(data.bits).group_indx
 
 Decode(data.bits, group_indx)
 
-quit()
 plots = Plot(data)
-plots.time_domain(500)
-quit()
-plots.fm(data.fm)
-plots.fm(data.bb)
 plots.constellation()
+#plots.time_domain(800)
+#plots.bb()
 
-
-plots.bb(data.bb)
-
-if groups:
-    plots.time_domain(groups[0])
-    #plots.clock()
-
-#if plot:
-    #ca = nmp.asarray(data.clk_len[100:])
-    #gt = (ca > 8).sum()
-    #lt = (ca < 8).sum()
-
-    #print("GT", gt)
-    #print("LT", lt)
