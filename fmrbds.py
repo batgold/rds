@@ -1,246 +1,44 @@
 #!/usr/bin/env python
 
+import sys
 import pickle
-import commpy as com
 import numpy as nmp
 import matplotlib.pyplot as plt
 import scipy.signal as sig
-from sys import stdout
-from time import sleep
-from bitarray import bitarray
+from scipy.integrate import cumtrapz
+from filters import Filters
 from rtlsdr import RtlSdr
 
-F_SAMPLE = int(228e3)       # 225-300 kHz and 900 - 2032 kHz
-#F_CENTER = int(96.5e6)      # FM Station, need strong RDBS signal, SF (KOIT XMAS)
-#F_CENTER = int(97.7e6)      # FM Station, PAL
-F_CENTER = int(104.5e6)      # FM Station, WV
-F_PILOT = int(19e3)         # pilot tone, 19kHz from Fc
-N_SAMPLES = int(512*512*3)  # must be multiple of 512, should be a multiple of 16384 (URB size)
-DEC_RATE = int(12)          # RBDS rate 1187.5 Hz. Thus 228e3/1187.5/24 = 8 sample/sym
-F_SYM = 1187.5            # Symbol rate, full bi-phase
-SPS = int(F_SAMPLE/DEC_RATE/F_SYM)   # Samples per Symbol
 
-
-def rtl_sample():
-    """STEP 0: SAMPLE DATA FROM RTLSDR"""
-    print("READING DATA")
-    sdr.sample_rate = F_SAMPLE
-    sdr.center_freq = F_CENTER
-    sdr.gain = 'auto'
-    smp_rtl = sdr.read_samples(N_SAMPLES)
-    sdr.close()
-    return smp_rtl[2000:]               #first 2000 samples are bogus
-
-
-class Filters:
-    """STEP 1: CONSTRUCT FILTERS"""
+class Code:
+    """CODE PARAMETERS"""
 
     def __init__(self):
-        print("BUILDING FILTERS")
-        self.rrc = self.build_rrc()
-        self.bpf = self.build_bpf()
-        self.ipf = self.build_ipf()
-        self.clk = self.build_clk()
-
-    def build_rrc(self):
-        """Cosine Filter"""
-        N = int(120)
-        T = 1/1187.5*3/8
-        alfa = 1 #put 8 samples per sym period. i.e. 16+1 in the main lobe
-        __,rrc = com.filters.rrcosfilter(N,alfa,T,F_SAMPLE/DEC_RATE)
-        return rrc
-
-    def build_bpf(self):
-        """Bandpass Filter, at 57kHz"""
-        cutoff = 3.0e3          # one-sided cutoff freq, slightly larger than 2.4kHz
-        w = [(F_PILOT*3 - cutoff) / F_SAMPLE*2, (F_PILOT*3 + cutoff) / F_SAMPLE*2]
-        b, a = sig.butter(N=12, Wn=w, btype='bandpass', analog=False)
-        return b, a
-
-    def build_ipf(self):
-        """Infinite (impulse response) Peak Filter at 19kHz"""
-        w = F_PILOT / float(F_SAMPLE / 2.0)
-        q = w / 5.0 * F_SAMPLE        # Q = f/bw, BW = 5 Hz
-        b, a = sig.iirpeak(w, q)
-        return b, a
-
-    def build_clk(self):
-        """Infinite (impulse response) Peak Filter at Symbol Rate 1187.5Hz"""
-        w = F_SYM / float(F_SAMPLE / DEC_RATE / 2.0)
-        q = w / 5.0 * F_SAMPLE * DEC_RATE         # Q = f/bw, BW = 5 Hz
-        b, a = sig.iirpeak(w, q)
-        return b, a
-
-
-class Demod:
-    """STEP 2: RF Demodulation to Baseband"""
-
-    def __init__(self, data, phz_offset):
-        print("DEMODULATING")
-        self.data = data
-        self.phz_offset = phz_offset
-        self.demod_fm()
-        self.carrier_recovery()
-        self.cull_rds()
-        self.pulse_shape()
-        self.clock_recovery()
-        self.symbol_decode()
-        self.bit_decode()
-
-    def demod_fm(self):
-        """STEP 2.1: DEMODULATE FM"""
-        print("...DEMOD FM")
-        x1 = self.data[1:] * nmp.conj(self.data[:-1])                     # 1:end, 0:end-1
-        self.fm = nmp.angle(x1)
-
-    def carrier_recovery(self):
-        """STEP 2.2: RECOVER RF CARRIER"""
-        print("...RECOVER CARRIER")
-        y1 = sig.lfilter(filter.ipf[0], filter.ipf[1], self.fm)   # filter out 19 kHz
-        #self.crr3 = nmp.exp(nmp.arange(0,len(self.data))*1j*F_PILOT*3)          # free-running clock
-        self.crr = sig.hilbert(y1) ** 3.0                                # multiply up to 57 kHz
-
-    def cull_rds(self):
-        """STEP 2.3: FILTER, MIX DOWN TO BB & DECIMATE"""
-        print("...MOVE TO BASEBAND")
-        x2 = sig.lfilter(filter.bpf[0], filter.bpf[1], self.fm)     # BPF
-        x3 = 1000 * x2 * self.crr                                 # mix signal down by 57 kHz
-        self.bb = sig.decimate(x3, DEC_RATE, zero_phase=True)      # Decimate
-
-    def pulse_shape(self):
-        """STEP 2.4: APPLY R.R.COSINE FILTER"""
-        print("...PULSE SHAPE")
-        x4 = 90 * sig.lfilter(filter.rrc, 1, self.bb)     #gain of 5 seems gud
-        self.amp = nmp.absolute(x4)
-        self.phz = nmp.angle(x4)
-
-    def clock_recovery(self):
-        """STEP 2.5: DETERMINE SYMBOL CLOCK RATE"""
-        print("...RECOVER CLOCK")
-        x5 = sig.lfilter(filter.clk[0], filter.clk[1], self.bb)
-        self.clk = (x5 > 0)
-
-    def symbol_decode(self):
-        """STEP 2.6: SAMPLE SYMBOLS AT CLOCK RATE"""
-        print("...DECODING SYMBOLS")
-        toc = 0
-        m = 0
-        x6 = []
-        x7 = []
-        for n, tic in enumerate(self.clk):
-            if abs(1*tic - toc):
-                toc = tic
-                m = n
-                x6.append(self.amp[n])
-                x7.append(self.phz[n])
-        x8 = nmp.asarray(x7)  #use phase
-        x9 = (x8 > 0)
-        self.sym = x9[self.phz_offset::2]
-
-        self.I = x6[self.phz_offset::2] * nmp.cos(x7[self.phz_offset::2])
-        self.Q = x6[self.phz_offset::2] * nmp.sin(x7[self.phz_offset::2])
-
-    def bit_decode(self):
-        """STEP 2.7: DECODE MANCHESTER SYMBOLS"""
-        self.bits = nmp.bitwise_xor(self.sym[1:], self.sym[:-1])
-
-
-class Block_Sync:
-    """STEP 3: Synchronize and Interrogate Blocks"""
-
-    def __init__(self, bits):
-        print("SYNCHRONIZING BLOCKS")
-        self.bits = bits
         self.parity = [512,256,128,64,32,16,8,4,2,1,732,366,183,647,927,787,853,886,443,513,988,494,247,679,911,795]
         self.syndromes = [984, 980, 604, 600]
-        self.word_list = ['A', 'B', 'C', 'D']
-        self.words, self.words_indx, self.words_dist = self.get_words()
-        self.blocks, self.blocks_indx = self.get_blocks()
-        self.group_indx = self.get_groups()
-        print "...WORDS: ", len(self.words)
-        print "...BLOCKS:", len(self.blocks)
-        print "...GROUPS:", len(self.group_indx)
-
-    def get_syndrome(self, n_bit):
-        syndrome = 0;
-        for n in range(26):
-            if self.bits[n_bit + n]:
-                syndrome = nmp.bitwise_xor(syndrome, self.parity[n])    #multiply word by H
-        return syndrome
-
-    def get_words(self):
-        prev_bit = 0
-        words = []
-        words_indx = []
-        words_dist = []
-
-        for n_bit in range(len(self.bits) - 26):
-            syndrome = self.get_syndrome(n_bit)         #calculate syndrome
-
-            if syndrome in self.syndromes:              #if valid syndrome
-                indx = self.syndromes.index(syndrome)
-                words.append(self.word_list[indx])
-                words_indx.append(n_bit)
-                words_dist.append(n_bit - prev_bit)
-                prev_bit = n_bit
-        return words, words_indx, words_dist
-
-    def get_blocks(self):
-        blocks = []
-        blocks_indx = []
-        for n, word in enumerate(self.words):
-            if word == 'A' or self.words_dist[n] == 26:
-                blocks.append(word)
-                blocks_indx.append(self.words_indx[n])
-        return blocks, blocks_indx
-
-    def get_groups(self):
-        group_indx = []
-        for n in range(len(self.blocks) - 4):
-            group = self.blocks[n:n+4]
-            if nmp.array_equal(group, self.word_list):
-                group_indx.append(self.blocks_indx[n])
-        return group_indx
-
-
-class Decode:
-    """STEP 4: Decode Bits into Message"""
-
-    def __init__(self, bits, bit_start):
-        self.bits = bits
-        self.ps = ['_','_','_','_''_','_','_','_']
+        #self.words = ['A', 'B', 'C', 'D']
+        self.words = [0,1,2,3]
+        self.pi = ''
+        self.gt = ''
+        self.pt = ''
+        self.ps = ['_','_','_','_','_','_','_','_']
         self.rt = ['_','_','_','_','_','_','_','_','_','_','_','_','_','_','_','_']
 
-        for bit in bit_start:
-            self.set_blocks(bit)
-            pi = self.prog_id()
-            gt = self.group_type()
-            pt = self.prog_type()
+    def print_code(self):
+        print self.pi, self.gt, self.pt, ''.join(self.ps), ' / ', ''.join(self.rt)
 
-            if gt == '0A':
-                self.cc = self.char_code()
-                self.prog_service()
-            elif gt == '2A':
-                self.cc = self.text_segment()
-                self.radiotext()
-            else:
-                self.cc = 0
+    def syndrome(self, bits, bit_n):
+        syn = 0
+        for n in range(26):
+            if bits[bit_n + n]:
+                syn = nmp.bitwise_xor(syn, self.parity[n])
+        return syn
 
-            print pi, gt, pt, self.cc, ''.join(self.ps), ' / ', ''.join(self.rt)
-            print self.C
-            print self.D
-
-    def set_blocks(self, bit):
-        self.A = 1 * self.bits[bit     :bit + 16]
-        self.B = 1 * self.bits[bit + 26:bit + 42]
-        self.C = 1 * self.bits[bit + 52:bit + 68]
-        self.D = 1 * self.bits[bit + 78:bit + 94]
-
-    def prog_id(self):
+    def prog_id(self, A):
         """Program Identification"""
         K = 4096
         W = 21672
-        pi_int = self.bit2int(self.A)
+        pi_int = self.bit2int(A)
         if pi_int >= W:
             pi0 = 'W'
             pi1 = W
@@ -250,17 +48,15 @@ class Decode:
         pi2 = nmp.floor_divide(pi_int - pi1, 676)
         pi3 = nmp.floor_divide(pi_int - pi1 - pi2*676, 26)
         pi4 = pi_int - pi1 - pi2*676 - pi3*26
-        pi = pi0 + chr(pi2+65) + chr(pi3+65) + chr(pi4+65)
-        return pi
+        self.pi = pi0 + chr(pi2+65) + chr(pi3+65) + chr(pi4+65)
 
-    def group_type(self):
+    def group_type(self, B):
         """Group Type"""
-        gt_num = self.bit2int(self.B[0:4])
-        gt_ver = self.B[4]
-        gt = str(gt_num) + chr(gt_ver + 65)      # 5th bit = Version (A|B)
-        return gt
+        gt_num = self.bit2int(B[0:4])
+        gt_ver = B[4]
+        self.gt = str(gt_num) + chr(gt_ver + 65)      # 5th bit = Version (A|B)
 
-    def prog_type(self):
+    def prog_type(self, B):
         """Program Type"""
         pt_codes = ['None', 'News', 'Info', 'Sports', 'Talk', 'Rock', \
                     'Classic Rock', 'Adult Hits', 'Soft Rock', \
@@ -268,30 +64,22 @@ class Decode:
                     'Classical', 'R&B', 'Foreign Lang.', 'Religious Music', \
                     'Religious Talk', 'Personality', 'Public', 'College', 'NA', \
                     'Weather', 'Emergency Test', 'ALERT!']
-        pt_num = self.bit2int(self.B[6:11])
-        pt = pt_codes[pt_num]
-        return pt
+        pt_num = self.bit2int(B[6:11])
+        self.pt = pt_codes[pt_num]
 
-    def char_code(self):
-        """Character Placement"""
-        return self.bit2int(self.B[-2:])
+    def prog_service(self, B, D):
+        cc = self.bit2int(B[-2:])
+        ps1 = self.bit2int(D[0:8])
+        ps2 = self.bit2int(D[8:16])
+        self.ps[2*cc] = chr(ps1) + chr(ps2)
 
-    def text_segment(self):
-        """Character Placement"""
-        return self.bit2int(self.B[-4:])
-
-    def prog_service(self):
-        ps1 = self.bit2int(self.D[0:8])
-        ps2 = self.bit2int(self.D[8:16])
-        self.ps[self.cc] = chr(ps1) + chr(ps2)
-
-    def radiotext(self):
-        rt1 = self.bit2int(self.C[0:8])
-        rt2 = self.bit2int(self.C[8:16])
-        rt3 = self.bit2int(self.D[0:8])
-        rt4 = self.bit2int(self.D[8:16])
-
-        self.rt[self.cc] = chr(rt1) + chr(rt2) + chr(rt3) + chr(rt4)
+    def radiotext(self, B, C, D):
+        cc = self.bit2int(B[-4:])
+        rt1 = self.bit2int(C[0:8])
+        rt2 = self.bit2int(C[8:16])
+        rt3 = self.bit2int(D[0:8])
+        rt4 = self.bit2int(D[8:16])
+        self.rt[4*cc:4*cc+4] = chr(rt1) + chr(rt2) + chr(rt3) + chr(rt4)
 
     def bit2int(self, bits):
         """Convert bit string to integer"""
@@ -300,80 +88,196 @@ class Decode:
             word = (word<<1) | bit
         return int(word)
 
-    def print_msg(self):
-        return None
-
-
 class Plot:
     """PLOT"""
 
-    def __init__(self, data):
-        self.data = data
-        self.amp = data.amp
-        self.phz = data.phz
-        self.sym = data.sym
-        self.bit = data.bits
-        self.clk = data.clk
+    def __init__(self):
+        return None
 
-    def constellation(self):
+    def constellation(self, I, Q):
         plt.figure()
-        plt.plot(self.data.I, self.data.Q, 'b.', alpha=0.5)
+        plt.plot(I, Q, 'b.', alpha=0.5)
         plt.show()
 
-    def time_domain(self, T1):
-        T2 = T1 + SPS*10
-        T = nmp.arange(T1,T2)
+    def time_domain(self, amp, phz, clk):
         plt.figure()
-        plt.plot(T, self.amp[T1:T2], 'b.')
-        plt.plot(T, self.phz[T1:T2], 'r+')
-        plt.plot(T, self.clk[T1:T2], 'g')
+        plt.plot(amp, 'b.')
+        plt.plot(phz, 'r+')
+        plt.plot(clk, 'g')
         plt.show()
 
-    def clock(self):
+    def fm(self, samples):
         plt.figure()
-        plt.plot(self.clk)
-        plt.show()
-
-    def fm(self):
-        plt.figure()
-        plt.psd(self.data.fm, NFFT=2048, Fs=F_SAMPLE/1000)
-        plt.psd(self.clk, NFFT=2048, Fs=F_SAMPLE/1000)
+        plt.psd(samples, NFFT=2048, Fs=F_SAMPLE/1000)
+        #plt.psd(self.clk, NFFT=2048, Fs=F_SAMPLE/1000)
         plt.ylim([-50, 0])
         plt.yticks(nmp.arange(-50, 0, 10))
         plt.show()
 
-    def bb(self):
+    def bb(self, samples):
         plt.figure()
-        plt.psd(self.data.bb, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
-        plt.psd(self.clk, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
+        plt.psd(samples, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
+        #plt.psd(self.clk, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
         plt.ylim([-25, 0])
         plt.yticks(nmp.arange(-25, 0, 5))
         plt.show()
 
+class Radio_Data_System():
+    """RADIO"""
 
-live = False
+    def __init__(self, filters, code, plot):
+        self.filters = filters
+        self.code = code
+        self.plot = plot
 
-if live:
-    sdr = RtlSdr()
-    smp_rtl = rtl_sample()                              # RTL Samples
+    def start(self):
+        if LIVE:
+            self.read_samples()
+        else:
+            self.load_samples()
 
-    with open('fm_data', 'wb') as f:
-        pickle.dump(smp_rtl, f)
-else:
-    print("READING DATA")
-    with open('fm_data', 'rb') as f:
-        smp_rtl = pickle.load(f)
+    def read_samples(self):
+        print("READING DATA")
+        self.sdr = RtlSdr()
+        self.sdr.rs = F_SAMPLE
+        self.sdr.fc = F_CENTER
+        self.sdr.gain = 'auto'
 
+        samples = self.sdr.read_samples(N_SAMPLES)
+        samples = samples[2000:]        #first 2000 samples are bogus
+        self.demodulate(samples)
+        self.sdr.close()
 
-filter = Filters()
-data = Demod(smp_rtl, 3)
+        with open('radio_signal', 'wb') as f:
+            pickle.dump(samples, f)
 
-group_indx = Block_Sync(data.bits).group_indx
+    def load_samples(self):
+        print "LOADING DATA"
+        with open('radio_signal', 'rb') as f:
+            samples = pickle.load(f)
+        self.demodulate(samples)
 
-Decode(data.bits, group_indx)
+    def demodulate(self, samples):
+        print "DEMODULATE FM"
+        x1 = samples[1:] * nmp.conj(samples[:-1])    # 1:end, 0:end-1
+        x2 = nmp.angle(x1)
+        #self.plot.fm(x2)
+        self.calc_snr(x2)
+        crr = self.recover_carrier(x2)  # get 57kHz carrier
+        x3 = sig.lfilter(self.filters.bpf[0], self.filters.bpf[1], x2) # BPF
+        x4 = 1000 * crr * x3        # mix down to baseband
+        x5 = sig.decimate(x4, DEC_RATE, zero_phase=True)
+        #self.plot.bb(x5)
+        clk = self.recover_clock(x5)
+        x6 = 90 * sig.lfilter(self.filters.rrc, 1, x5)
+        sym = self.recover_symbols(clk, x6)
+        bits = nmp.bitwise_xor(sym[1:], sym[:-1])
+        self.synchronize(bits)
 
-plots = Plot(data)
-plots.constellation()
-#plots.time_domain(800)
-#plots.bb()
+    def calc_snr(self, x):
+        [P, f] = plt.psd(x, NFFT=2048, Fs=F_SAMPLE)
+        s_idx = (nmp.abs(f - (57e3 + F_SYM))).argmin()
+        n_idx = (nmp.abs(f - 57e3)).argmin()
+        S = 10*nmp.log10(P[s_idx])
+        N = 10*nmp.log10(P[n_idx])
+        print 'SNR: ', int(S-N), 'dB'
+        if S-N > SNR_THRESH:
+            return None
+        else:
+            print '...LOW SNR. QUITTING!'
+            sys.exit()
 
+    def recover_carrier(self, samples):
+        print "RECOVER CARRIER"
+        crr = sig.lfilter(self.filters.ipf[0], self.filters.ipf[1], samples)
+        return sig.hilbert(crr) ** 3.0
+
+    def recover_clock(self, samples):
+        print "RECOVER CLOCK"
+        clk = sig.lfilter(self.filters.clk[0], self.filters.clk[1], samples)
+        clk = nmp.array(clk > 0)
+        return clk - 0.5
+
+    def recover_symbols(self, clk, x):
+        print "RECOVER SYMBOLS"
+        zero_xing = nmp.where(nmp.diff(nmp.sign(clk)))[0]
+        zero_xing = zero_xing[0::2]
+        amp = nmp.absolute(x[zero_xing])
+        phz = nmp.angle(x[zero_xing])
+        x = x[zero_xing]
+        sym = (phz > 0)
+        I = amp * nmp.cos(phz)
+        Q = amp * nmp.sin(phz)
+        sym = (Q>0)
+
+        #self.plot.time_domain(amp, phz, sym)
+        #self.plot.constellation(I, Q)
+        return sym
+
+    def synchronize(self, bits):
+        print "SYNCHRONIZE BITS"
+        words = []
+        blocks = []
+        groups = []
+        m = 0
+
+        for n, bit in enumerate(bits[:-26]):
+            syndrome = self.code.syndrome(bits, n)
+            # [984, 980, 604, 600]
+            if syndrome in self.code.syndromes:
+                i = self.code.syndromes.index(syndrome)     # 1,2,3,4 = A,B,C,D
+                words.append([i, n, n - m])   # [letter, location, distance from prev word]
+                m = n
+
+        for n, word in enumerate(words):
+            if (word[0] - words[n-1][0] == 1 and word[2] == 26) or word[0] == 0:
+                blocks.append(word)
+
+        for n, block in enumerate(blocks[:-3]):
+            group = [word[0] for word in blocks[n:n+4]]
+            if nmp.array_equal(group, self.code.words):
+                groups.append(block[1])
+
+        print "...WORDS: ", len(words)
+        print "...BLOCKS:", len(blocks)
+        print "...GROUPS:", len(groups)
+
+        for group in groups:
+            self.decode(bits[group:group + 104])
+
+    def decode(self, bits):
+        A = 1 * bits[0:16]
+        B = 1 * bits[26:42]
+        C = 1 * bits[52:68]
+        D = 1 * bits[78:94]
+
+        self.code.prog_id(A)
+        self.code.group_type(B)
+        self.code.prog_type(B)
+
+        if self.code.gt == '0A':
+            self.code.prog_service(B, D)
+        elif self.code.gt == '2A':
+            self.code.radiotext(B, C, D)
+
+def main():
+    filt = Filters(F_SAMPLE, F_SYM, DEC_RATE)
+    code = Code()
+    plot = Plot()
+    rds = Radio_Data_System(filt, code, plot)
+
+    rds.start()
+    code.print_code()
+
+LIVE = False
+
+station = float(sys.argv[1]) * 1e6
+F_CENTER = station     # FM Station
+F_SAMPLE = 228e3       # 225-300 kHz and 900 - 2032 kHz
+N_SAMPLES = 512*512*3  # must be multiple of 512, should be a multiple of 16384 (URB size)
+DEC_RATE = 12          # RBDS rate 1187.5 Hz. Thus 228e3/1187.5/24 = 8 sample/sym
+F_SYM = 1187.5            # Symbol rate, full bi-phase
+SPS = F_SAMPLE/DEC_RATE/F_SYM   # Samples per Symbol
+SNR_THRESH = 5          #SNR threshold for quitting, dB
+
+main()
