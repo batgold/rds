@@ -5,7 +5,6 @@ import scipy.signal as sig
 import matplotlib.pyplot as plt
 
 class Filters:
-    """STEP 1: CONSTRUCT FILTERS"""
 
     def __init__(self, F_SAMPLE, F_SYM, DEC_RATE):
         print("BUILDING FILTERS")
@@ -40,7 +39,7 @@ class Filters:
     def build_ipf(self):
         """Infinite (impulse response) Peak Filter at 19kHz"""
         w = self.fpilot / float(self.fs / 2.0)
-        q = w / 8.0 * self.fs        # Q = f/bw, BW = 8 Hz
+        q = w / 16.0 * self.fs        # Q = f/bw, BW = 16 Hz
         b, a = sig.iirpeak(w, q)
         return b, a
 

@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import scipy.signal as sig
 from scipy.integrate import cumtrapz
 from filters import Filters
+from graph import Graph
 from rtlsdr import RtlSdr
 
 
@@ -27,12 +28,6 @@ class Code:
     def print_code(self):
         print self.pi, self.gt, self.pt, ''.join(self.ps), ' / ', ''.join(self.rt)
 
-    def syndrome(self, bits, bit_n):
-        syn = 0
-        for n in range(26):
-            if bits[bit_n + n]:
-                syn = nmp.bitwise_xor(syn, self.parity[n])
-        return syn
 
     def prog_id(self, A):
         """Program Identification"""
@@ -88,47 +83,12 @@ class Code:
             word = (word<<1) | bit
         return int(word)
 
-class Plot:
-    """PLOT"""
-
-    def __init__(self):
-        return None
-
-    def constellation(self, I, Q):
-        plt.figure()
-        plt.plot(I, Q, 'b.', alpha=0.5)
-        plt.show()
-
-    def time_domain(self, amp, phz, clk):
-        plt.figure()
-        plt.plot(amp, 'b.')
-        plt.plot(phz, 'r+')
-        plt.plot(clk, 'g')
-        plt.show()
-
-    def fm(self, samples):
-        plt.figure()
-        plt.psd(samples, NFFT=2048, Fs=F_SAMPLE/1000)
-        #plt.psd(self.clk, NFFT=2048, Fs=F_SAMPLE/1000)
-        plt.ylim([-50, 0])
-        plt.yticks(nmp.arange(-50, 0, 10))
-        plt.show()
-
-    def bb(self, samples):
-        plt.figure()
-        plt.psd(samples, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
-        #plt.psd(self.clk, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
-        plt.ylim([-25, 0])
-        plt.yticks(nmp.arange(-25, 0, 5))
-        plt.show()
-
-class Radio_Data_System():
+class Demodulate():
     """RADIO"""
 
-    def __init__(self, filters, code, plot):
-        self.filters = filters
-        self.code = code
-        self.plot = plot
+    def __init__(self):
+        self.bits = []
+        self.start()
 
     def start(self):
         if LIVE:
@@ -161,18 +121,17 @@ class Radio_Data_System():
         print "DEMODULATE FM"
         x1 = samples[1:] * nmp.conj(samples[:-1])    # 1:end, 0:end-1
         x2 = nmp.angle(x1)
-        #self.plot.fm(x2)
+        #graph.fm(x2)
         self.calc_snr(x2)
         crr = self.recover_carrier(x2)  # get 57kHz carrier
-        x3 = sig.lfilter(self.filters.bpf[0], self.filters.bpf[1], x2) # BPF
+        x3 = sig.lfilter(filters.bpf[0], filters.bpf[1], x2) # BPF
         x4 = 1000 * crr * x3        # mix down to baseband
         x5 = sig.decimate(x4, DEC_RATE, zero_phase=True)
-        #self.plot.bb(x5)
+        #graph.bb(x5)
         clk = self.recover_clock(x5)
-        x6 = 90 * sig.lfilter(self.filters.rrc, 1, x5)
+        x6 = 90 * sig.lfilter(filters.rrc, 1, x5)
         sym = self.recover_symbols(clk, x6)
-        bits = nmp.bitwise_xor(sym[1:], sym[:-1])
-        self.synchronize(bits)
+        self.bits = nmp.bitwise_xor(sym[1:], sym[:-1])
 
     def calc_snr(self, x):
         [P, f] = plt.psd(x, NFFT=2048, Fs=F_SAMPLE)
@@ -181,20 +140,18 @@ class Radio_Data_System():
         S = 10*nmp.log10(P[s_idx])
         N = 10*nmp.log10(P[n_idx])
         print 'SNR: ', int(S-N), 'dB'
-        if S-N > SNR_THRESH:
-            return None
-        else:
+        if S-N < SNR_THRESH:
             print '...LOW SNR. QUITTING!'
             sys.exit()
 
     def recover_carrier(self, samples):
         print "RECOVER CARRIER"
-        crr = sig.lfilter(self.filters.ipf[0], self.filters.ipf[1], samples)
+        crr = sig.lfilter(filters.ipf[0], filters.ipf[1], samples)
         return sig.hilbert(crr) ** 3.0
 
     def recover_clock(self, samples):
         print "RECOVER CLOCK"
-        clk = sig.lfilter(self.filters.clk[0], self.filters.clk[1], samples)
+        clk = sig.lfilter(filters.clk[0], filters.clk[1], samples)
         clk = nmp.array(clk > 0)
         return clk - 0.5
 
@@ -210,64 +167,110 @@ class Radio_Data_System():
         Q = amp * nmp.sin(phz)
         sym = (Q>0)
 
-        #self.plot.time_domain(amp, phz, sym)
-        #self.plot.constellation(I, Q)
+        #graph.time_domain(amp, phz, sym)
+        #graph.constellation(I, Q)
         return sym
 
-    def synchronize(self, bits):
-        print "SYNCHRONIZE BITS"
-        words = []
-        blocks = []
-        groups = []
-        m = 0
+class Decode():
+    """DECODE"""
+    def __init__(self):
+        self.bits = []
+        self.n = 0
 
-        for n, bit in enumerate(bits[:-26]):
-            syndrome = self.code.syndrome(bits, n)
-            # [984, 980, 604, 600]
-            if syndrome in self.code.syndromes:
-                i = self.code.syndromes.index(syndrome)     # 1,2,3,4 = A,B,C,D
-                words.append([i, n, n - m])   # [letter, location, distance from prev word]
-                m = n
+    def start(self):
+        self.block_sync()
 
-        for n, word in enumerate(words):
-            if (word[0] - words[n-1][0] == 1 and word[2] == 26) or word[0] == 0:
-                blocks.append(word)
+    def block_sync(self):
+        while self.n < len(self.bits - 104):
+            syns = self.group_syndrome()
+            if syns == code.syndromes:
+                print "OK", self.n
+                self.decode()
+                self.n += 104
+            else:
+                self.n = self.error_correct()
+            self.n += 1
 
-        for n, block in enumerate(blocks[:-3]):
-            group = [word[0] for word in blocks[n:n+4]]
-            if nmp.array_equal(group, self.code.words):
-                groups.append(block[1])
+    def error_correct(self):
+        return self.n
+        #syndrome error
+        err = 
 
-        print "...WORDS: ", len(words)
-        print "...BLOCKS:", len(blocks)
-        print "...GROUPS:", len(groups)
 
-        for group in groups:
-            self.decode(bits[group:group + 104])
+        #shift right
 
-    def decode(self, bits):
+    def process_bits2(self, n):
+        print "PROCESS BITS"
+        group_num = 0
+
+        for n in range(bit_sync,len(self.bits),26):
+            syndrome = code.syndrome(self.bits[n:n+26])
+            print syndrome
+            print '-', syndrome ^ code.syndromes[group_num]
+            err = syndrome ^ code.syndromes[group_num]
+            if err <> 0:
+                self.error_correct(n, group_num, err)
+        #self.decode(self.bits[n:n+104])
+            group_num += 1
+            if group_num == 4: group_num = 0
+
+    def error_correct2(self, n, g, s):
+        print "ERROR"
+        syndrome = code.syndrome(self.bits[n+1:n+1+26])
+        #print '--', syndrome ^ code.syndromes[g]
+        #try to shift bits right 1
+        if syndrome ^ code.syndromes[g] == 0:
+            print "FIXED!"
+        if s <= 512:
+            try:
+                bit = code.parity.index(s)
+                print ">>>>",s, bit
+                self.bits[n+bit] = 1 - self.bits[n+bit]
+                syndrome = code.syndrome(self.bits[n:n+26])
+                if syndrome ^ code.syndromes[g] == 0:
+                    print "FIXED!"
+            except:
+                return None
+
+    def decode(self):
+        bits = self.bits[self.n:self.n+104]
         A = 1 * bits[0:16]
         B = 1 * bits[26:42]
         C = 1 * bits[52:68]
         D = 1 * bits[78:94]
 
-        self.code.prog_id(A)
-        self.code.group_type(B)
-        self.code.prog_type(B)
+        code.prog_id(A)
+        code.group_type(B)
+        code.prog_type(B)
 
-        if self.code.gt == '0A':
-            self.code.prog_service(B, D)
-        elif self.code.gt == '2A':
-            self.code.radiotext(B, C, D)
+        if code.gt == '0A':
+            code.prog_service(B, D)
+        elif code.gt == '2A':
+            code.radiotext(B, C, D)
+
+    def group_syndrome(self):
+        n = self.n
+        A = self.syndrome(self.bits[n:n+26])
+        B = self.syndrome(self.bits[n+26:n+52])
+        C = self.syndrome(self.bits[n+52:n+78])
+        D = self.syndrome(self.bits[n+78:n+104])
+        return [A, B, C, D]
+
+    def syndrome(self, bits):
+        syn = 0
+        for n, bit in enumerate(bits):
+            if bit:
+                syn = nmp.bitwise_xor(syn, code.parity[n])
+        return syn
 
 def main():
-    filt = Filters(F_SAMPLE, F_SYM, DEC_RATE)
-    code = Code()
-    plot = Plot()
-    rds = Radio_Data_System(filt, code, plot)
+    demod = Demodulate()
+    decode = Decode()
 
-    rds.start()
+    decode.bits = demod.bits
+    decode.start()
     code.print_code()
+
 
 LIVE = False
 
@@ -279,5 +282,9 @@ DEC_RATE = 12          # RBDS rate 1187.5 Hz. Thus 228e3/1187.5/24 = 8 sample/sy
 F_SYM = 1187.5            # Symbol rate, full bi-phase
 SPS = F_SAMPLE/DEC_RATE/F_SYM   # Samples per Symbol
 SNR_THRESH = 5          #SNR threshold for quitting, dB
+
+filters = Filters(F_SAMPLE, F_SYM, DEC_RATE)
+graph = Graph(F_SAMPLE, N_SAMPLES)
+code = Code()
 
 main()
