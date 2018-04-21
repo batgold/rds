@@ -5,7 +5,6 @@ import pickle
 import numpy as nmp
 import matplotlib.pyplot as plt
 import scipy.signal as sig
-from scipy.integrate import cumtrapz
 from filters import Filters
 from graph import Graph
 from rtlsdr import RtlSdr
@@ -111,36 +110,65 @@ class Decode():
 
     def start(self):
         while self.n < len(self.bits - 104):
+
             if not self.sync:
-                self.group_sync()
-            else:
-                self.block_sync()
-            self.n += 1
+                self.n += 1
+                if self.validate_syndrome():
+                    self.set_anchor()
 
+            if self.sync:
+                bit_frame = self.bits[self.n:self.n + 104]
+                msg = Message(bit_frame)
+                print self.n
+                msg.decode()
+                msg.print_code()
+                #self.sync_check()
+                self.n += 104
 
-    def group_sync(self):
-        self.group_syndrome()
-        if self.sync:
-            self.decode()
-            self.n += 103
+            if self.n > 1000: break
 
-    def block_sync(self):
-        self.sync = False
-        self.group_sync()
+    def sync_check(self):
+        pi = self.msg['pi']
+        pt = self.msg['pt']
+        print pi, pt, self.pi_sync
+        if pi == self.pi_sync and pt == self.pt_sync:
+            self.sync = True
+            self.print_code()
+        else:
+            self.sync = False
+            self.error_correct()
 
+    def error_correct(self):
         if not self.sync:
-            [A, B, C, D] = self.group_msg()
+            self.pi_bit_flip()
+        if not self.sync:
+            self.bit_slip()
+        if not self.sync:
+            a=1
 
-            pi = self.prog_id(A)
-            pt = self.prog_type(B)
+        if self.sync:
+            self.print_code()
 
-        #if pi == self.pi_sync or pt == self.pt_sync:
-            #self.bit_flip()
-        #else:
-            #self.bit_slide()
+    def bit_slip(self):
+        n = self.n
+        for x in range(-1,1,2):
+            self.n += x
+            self.decode()
+            pi = self.msg['pi']
+            if pi == self.pi_sync:
+                self.sync = True
+        self.n = n
+
+    def pi_bit_flip(self):
+        pi = self.msg['pi']
+        pi = [ord(char) for char in pi]
+        pi_sync = [ord(char) for char in self.pi_sync]
+        pi_cnt = set(pi).intersection(pi_sync)
+        if len(pi_cnt) >= 3:
+            self.sync = True
 
     def bit_flip(self):
-        s = self.group_syndrome()
+        s = self.check_syndrome()
         err = s['A'] ^ self.syndromes['A']
         err_size = bin(err).count('1')
         if err_size > 0 and err_size < 3:
@@ -150,58 +178,73 @@ class Decode():
         else:
             self.sync = False
 
-    def bit_slide(self):
-        return None
-        self.sync = False
+    def set_anchor(self):
+        bit_frame = self.bits[self.n:self.n + 104]
+        self.msg = Message(bit_frame)
+        self.msg.decode()
+        self.pi_sync = self.msg.pi
+        self.sync = True
 
-    def decode(self):
-        [A, B, C, D] = self.group_msg()
-
-        pi = self.prog_id(A)
-        pt = self.prog_type(B)
-        gt = self.group_type(B)
-
-        print gt, pi, pt,
-
-        if gt == '0A':
-            ps = self.prog_service(B, D)
-            print ''.join(ps)
-        elif gt == '1A':
-            print ''
-        elif gt == '2A':
-            rt = self.radiotext(B, C, D)
-            print ''.join(rt)
-
-        if self.sync:
-            self.pi_sync = pi
-            self.pt_sync = pt
-
-    def group_msg(self):
-        n = self.n
-        A = self.bits[n:n+16]
-        B = self.bits[n+26:n+42]
-        C = self.bits[n+52:n+68]
-        D = self.bits[n+78:n+94]
-        return [A, B, C, D]
+    def validate_syndrome(self):
+        syn = self.group_syndrome()
+        if syn == self.syndromes:
+            return True
 
     def group_syndrome(self):
-        n = self.n
-        s = {}
-        s['A'] = self.syndrome(self.bits[n:n+26])
-        s['B'] = self.syndrome(self.bits[n+26:n+52])
-        s['C'] = self.syndrome(self.bits[n+52:n+78])
-        s['D'] = self.syndrome(self.bits[n+78:n+104])
+        bit_frame = self.bits[self.n:self.n + 104]
+        syn = {}
+        syn['A'] = self.block_syndrome(bit_frame[:26])
+        syn['B'] = self.block_syndrome(bit_frame[26:52])
+        syn['C'] = self.block_syndrome(bit_frame[52:78])
+        syn['D'] = self.block_syndrome(bit_frame[78:])
 
-        if s == self.syndromes:
-            self.sync = True
-        return s
+        return syn
 
-    def syndrome(self, bits):
+    def block_syndrome(self, bits):
         syn = 0
         for n, bit in enumerate(bits):
             if bit:
                 syn = nmp.bitwise_xor(syn, self.parity[n])
         return syn
+
+class Message():
+    def __init__(self, bits):
+        self.bits = bits
+        self.pi = ''
+        self.ps = list('________')
+        self.rt = list('________________________________________________________________')
+        self.pt = ''
+        self.gt = ''
+
+    def decode(self):
+        A = self.bits[:16]
+        B = self.bits[26:42]
+        C = self.bits[52:68]
+        D = self.bits[78:94]
+
+        self.pi = self.prog_id(A)
+        self.pt = self.prog_type(B)
+        self.gt = self.group_type(B)
+
+        if self.gt == '0A':
+            self.prog_service(B, D)
+            self.rt = ''
+        elif self.gt == '2A':
+            self.radiotext(B, C, D)
+            self.ps = ''
+        else:
+            self.rt = ''
+            self.ps = ''
+
+    def print_code(self):
+        print '\n', self.pi, self.pt, self.gt
+
+        if self.gt == '0A':
+            print ''.join(self.ps)
+        elif self.gt == '2A':
+            print ''.join(self.rt)
+        else:
+            print ''
 
     def prog_id(self, A):
         """Program Identification"""
@@ -217,6 +260,7 @@ class Decode():
         pi2 = nmp.floor_divide(A - pi1, 676)
         pi3 = nmp.floor_divide(A - pi1 - pi2*676, 26)
         pi4 = A - pi1 - pi2*676 - pi3*26
+
         #self.pi = pi0 + chr(pi2+65) + chr(pi3+65) + chr(pi4+65)
         return pi0 + chr(pi2+65) + chr(pi3+65) + chr(pi4+65)
 
@@ -241,28 +285,21 @@ class Decode():
         return str(gt_num) + chr(gt_ver + 65)      # 5th bit = Version (A|B)
 
     def prog_service(self, B, D):
-        ps = ['_','_','_','_','_','_','_','_']
         cc = self.bit2int(B[-2:])
         ps1 = self.bit2int(D[0:8])
         ps2 = self.bit2int(D[8:16])
-        ps[2*cc] = chr(ps1) + chr(ps2)
-        return ps
+        self.ps[2*cc] = chr(ps1) + chr(ps2)
 
     def radiotext(self, B, C, D):
-        rt = ['_','_','_','_','_','_','_','_','_','_','_','_','_','_','_','_',
-              '_','_','_','_','_','_','_','_','_','_','_','_','_','_','_','_',
-              '_','_','_','_','_','_','_','_','_','_','_','_','_','_','_','_',
-              '_','_','_','_','_','_','_','_','_','_','_','_','_','_','_','_']
+        rtchr = [0,0,0,0]
         cc = self.bit2int(B[-4:])
-        rt1 = self.bit2int(C[0:8])
-        rt2 = self.bit2int(C[8:16])
-        rt3 = self.bit2int(D[0:8])
-        rt4 = self.bit2int(D[8:16])
-        rt[4*cc:4*cc+4] = chr(rt1) + chr(rt2) + chr(rt3) + chr(rt4)
-        return rt
+        rtchr[0] = self.bit2int(C[0:8])
+        rtchr[1] = self.bit2int(C[8:16])
+        rtchr[2] = self.bit2int(D[0:8])
+        rtchr[3] = self.bit2int(D[8:16])
 
-    def print_code(self):
-        print self.pi, self.gt, self.pt, ''.join(self.ps), ' / ', ''.join(self.rt)
+        #rt[4*cc:4*cc+4] = chr(rt1) + chr(rt2) + chr(rt3) + chr(rt4)
+        self.rt[4*cc:4*cc+4] = [chr(rtchr[i]) for i in range(0,4)]
 
     def bit2int(self, bits):
         """Convert bit string to integer"""
@@ -270,7 +307,6 @@ class Decode():
         for bit in bits:
             word = (word<<1) | bit
         return int(word)
-
 
 def main():
     demod = Demodulate()
@@ -294,4 +330,5 @@ SNR_THRESH = 5          #SNR threshold for quitting, dB
 filters = Filters(F_SAMPLE, F_SYM, DEC_RATE)
 graph = Graph(F_SAMPLE, N_SAMPLES)
 
-main()
+if __name__ == '__main__':
+     main()
