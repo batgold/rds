@@ -104,7 +104,7 @@ class Demodulate():
         sym = (Q>0)
 
         #graph.time_domain(amp, phz, sym)
-        graph.constellation(I, Q)
+        #graph.constellation(I, Q)
         return sym
 
 class Message():

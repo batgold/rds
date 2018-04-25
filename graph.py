@@ -14,6 +14,8 @@ class Graph:
         self.x = nmp.arange(0, self.N_SAMPLE)
         self.y = nmp.zeros(self.N_SAMPLE)
 
+        #plt.style.use('dark_background')
+
         #plt.ion()
         #plt.figure()
         #self.fig = plt.figure()
@@ -26,22 +28,24 @@ class Graph:
         #self.fig, self.ax = plt.subplots()
         #self.ax.plot(self.x,self.y)
 
-    def fm_bad(self, samples):
-        self.spec.set_ydata(samples)
-        plt.figure.canvas.draw()
+    #def fm_bad(self, samples):
+        #self.spec.set_ydata(samples)
+        #plt.figure.canvas.draw()
 
         #self.ax.plot(self.x, samples)
         #self.fig.canvas.draw_idle()
         #time.sleep(0.05)
-        return None
+        #return None
 
     def fm(self, samples):
-        #plt.figure()
+        print "FM!!"
+        plt.figure()
         plt.ylim([-50, 0])
         plt.yticks(nmp.arange(-50, 0, 10))
         plt.psd(samples, NFFT=2048, Fs=self.F_SAMPLE/1000)
         #plt.draw()
-        plt.pause(0.005)
+        #plt.pause(0.005)
+        plt.show()
 
     def stop(self):
         #plt.close()
@@ -51,7 +55,8 @@ class Graph:
 
     def constellation(self, I, Q):
         plt.figure()
-        plt.plot(I, Q, 'b.', alpha=0.5)
+        #plt.plot(I, Q, 'b.', alpha=0.5)
+        plt.plot(I, Q, '.', alpha=0.5)
         plt.show()
 
     def time_domain(self, amp, phz, clk):

@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 class Filters:
 
     def __init__(self, F_SAMPLE, F_SYM, DEC_RATE):
-        print("BUILDING FILTERS")
         self.fs = F_SAMPLE
         self.fsym = F_SYM
         self.dec = DEC_RATE
