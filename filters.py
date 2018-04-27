@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import numpy as nmp
 import commpy as com
 import scipy.signal as sig
 import matplotlib.pyplot as plt
@@ -11,11 +12,13 @@ class Filters:
         self.fsym = F_SYM
         self.dec = DEC_RATE
         self.fpilot = int(19e3)          # pilot tone, 19kHz from Fc
-        self.rrc = self.build_rrc()
-        self.bpf = self.build_bpf()
-        self.ipf = self.build_ipf()
-        self.clk = self.build_clk()
-        self.lpf = self.build_lpf()
+        #self.rrc = self.build_rrc()
+        #self.bpf = self.build_bpf()
+        #self.ipf = self.build_ipf()
+        #self.clk = self.build_clk()
+        #self.lpf = self.build_lpf()
+        self.mono_lpf = self.build_mono_lpf()
+        self.de_empf = self.build_de_empf()
 
     def build_rrc(self):
         """Cosine Filter"""
@@ -56,3 +59,16 @@ class Filters:
         #plt.plot(f*self.fs/self.dec/2/3.14,abs(h))
         #plt.show()
         return b, a
+
+    def build_mono_lpf(self):
+        N = 4
+        cutoff = 17e3
+        w = cutoff / self.fs * 2
+        return sig.butter(N=N, Wn=w, btype='lowpass', analog=False)
+
+    def build_de_empf(self):
+        """De-Emphasis Filter"""
+        cutoff = self.fs * 75e-6 / self.dec
+        #dmf_shape = nmp.exp(-1 / self.fs * self.dec / 75e-6)
+        dmf_shape = nmp.exp(-1 / cutoff)
+        return [1 - dmf_shape], [1, -dmf_shape]

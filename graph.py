@@ -38,13 +38,12 @@ class Graph:
         #return None
 
     def fm(self, samples):
-        print "FM!!"
         plt.figure()
         plt.ylim([-50, 0])
         plt.yticks(nmp.arange(-50, 0, 10))
         plt.psd(samples, NFFT=2048, Fs=self.F_SAMPLE/1000)
-        #plt.draw()
-        #plt.pause(0.005)
+        plt.xlabel('FREQUENCY, KHz')
+        plt.ylabel('POWER SPECTRAL DENSITY, dB/Hz')
         plt.show()
 
     def stop(self):
@@ -57,6 +56,13 @@ class Graph:
         plt.figure()
         #plt.plot(I, Q, 'b.', alpha=0.5)
         plt.plot(I, Q, '.', alpha=0.5)
+        plt.show()
+
+    def time(self, samples):
+        plt.figure()
+        plt.plot(samples)
+        plt.xlabel('SAMPLES')
+        plt.ylabel('AMPLITUDE')
         plt.show()
 
     def time_domain(self, amp, phz, clk):
