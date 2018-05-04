@@ -7,18 +7,21 @@ import matplotlib.pyplot as plt
 
 class Filters:
 
-    def __init__(self, F_SAMPLE, F_SYM, DEC_RATE):
+    def __init__(self, F_SAMPLE, F_SYMBOL, DEC_RATE):
         self.fs = F_SAMPLE
-        self.fsym = F_SYM
+        self.fsym = F_SYMBOL
         self.dec = DEC_RATE
-        self.fpilot = int(19e3)          # pilot tone, 19kHz from Fc
-        #self.rrc = self.build_rrc()
-        #self.bpf = self.build_bpf()
-        #self.ipf = self.build_ipf()
-        #self.clk = self.build_clk()
-        #self.lpf = self.build_lpf()
-        self.mono_lpf = self.build_mono_lpf()
-        self.de_empf = self.build_de_empf()
+
+        if self.fsym == 0:
+            self.mono_lpf = self.build_mono_lpf()
+            self.de_empf = self.build_de_empf()
+        else:
+            self.fpilot = int(19e3)
+            self.rrc = self.build_rrc()
+            self.bpf = self.build_bpf()
+            self.ipf = self.build_ipf()
+            self.clk = self.build_clk()
+            self.lpf = self.build_lpf()
 
     def build_rrc(self):
         """Cosine Filter"""
@@ -33,9 +36,6 @@ class Filters:
         cutoff = 3.0e3          # one-sided cutoff freq, slightly larger than 2.4kHz
         w = [(self.fpilot*3 - cutoff) / self.fs*2, (self.fpilot*3 + cutoff) / self.fs*2]
         b, a = sig.butter(N=12, Wn=w, btype='bandpass', analog=False)
-        #f,h = sig.freqz(b,a)
-        #plt.plot(f*self.fs/2/3.14,abs(h))
-        #plt.show()
         return b, a
 
     def build_ipf(self):
@@ -55,9 +55,6 @@ class Filters:
     def build_lpf(self):
         w = self.fsym * 2 / self.fs * self.dec * 2
         b, a = sig.butter(N=9, Wn=w, btype='lowpass', analog=False)
-        #f,h = sig.freqz(b,a)
-        #plt.plot(f*self.fs/self.dec/2/3.14,abs(h))
-        #plt.show()
         return b, a
 
     def build_mono_lpf(self):
