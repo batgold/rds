@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 import sys
 import pickle
 import numpy as nmp
@@ -7,9 +6,8 @@ import matplotlib.pyplot as plt
 import scipy.signal as sig
 from scipy.integrate import cumtrapz
 from filters import Filters
-from graph import Graph
+#from graph import Graph
 from rtlsdr import RtlSdr
-
 
 class Code:
     """CODE PARAMETERS"""
@@ -27,7 +25,6 @@ class Code:
 
     def print_code(self):
         print self.pi, self.gt, self.pt, ''.join(self.ps), ' / ', ''.join(self.rt)
-
 
     def prog_id(self, A):
         """Program Identification"""
@@ -122,7 +119,7 @@ class Demodulate():
         x1 = samples[1:] * nmp.conj(samples[:-1])    # 1:end, 0:end-1
         x2 = nmp.angle(x1)
         #graph.fm(x2)
-        self.calc_snr(x2)
+        #self.calc_snr(x2)
         crr = self.recover_carrier(x2)  # get 57kHz carrier
         x3 = sig.lfilter(filters.bpf[0], filters.bpf[1], x2) # BPF
         x4 = 1000 * crr * x3        # mix down to baseband
@@ -168,6 +165,8 @@ class Demodulate():
         sym = (Q>0)
 
         #graph.time_domain(amp, phz, sym)
+        plt.plot(I,Q,'.')
+        plt.show()
         #graph.constellation(I, Q)
         return sym
 
@@ -194,7 +193,7 @@ class Decode():
     def error_correct(self):
         return self.n
         #syndrome error
-        err = 
+        #err = 
 
 
         #shift right
@@ -284,7 +283,7 @@ SPS = F_SAMPLE/DEC_RATE/F_SYM   # Samples per Symbol
 SNR_THRESH = 5          #SNR threshold for quitting, dB
 
 filters = Filters(F_SAMPLE, F_SYM, DEC_RATE)
-graph = Graph(F_SAMPLE, N_SAMPLES)
+#graph = Graph(F_SAMPLE, N_SAMPLES)
 code = Code()
 
 main()

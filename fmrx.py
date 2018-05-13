@@ -10,7 +10,7 @@ import curses
 def callback(samples, sdr):
     global r
     r += 1
-    if r > 12:
+    if r > 1:
         sdr.cancel_read_async()
     else:
         #fm_audio.demod(samples)
@@ -31,7 +31,6 @@ if __name__ == "__main__":
     Ns = int(512*512)
     station = float(sys.argv[1]) * 1e6
     #fm_audio = Audio(Fs, Ns)
-    #fm_rds = wrapper(RDS, Fs, Ns)
-    fm_rds = RDS(0, Fs, Ns)
+    fm_rds = RDS(0, Fs, Ns, station)
 
     main()
