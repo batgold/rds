@@ -14,7 +14,7 @@ class Filters:
         self.Fsym = Fsym
         self.dec_rate = dec_rate
         self.graph = Graph(Fs, 1, 1)
-        self.costas_bw = 2**4
+        self.costas_bw = 10
 
         if self.Fsym == 0:
             self.mono_lpf = self.build_mono_lpf()
@@ -24,7 +24,7 @@ class Filters:
             self.rrc = self.build_rrc()
             self.bpf = self.build_bpf()
             #self.build_bpf2()
-            #self.ipf = self.build_ipf()
+            self.ipf = self.build_ipf()
             self.clk = self.build_clk()
             self.lpf = self.build_lpf()
             self.costas_lpf = self.build_costas_lpf()
@@ -69,6 +69,7 @@ class Filters:
         w = self.Fsym / float(self.Fs / self.dec_rate / 2.0)
         q = w / 4.0 * self.Fs * self.dec_rate         # Q = f/bw, BW = 4 Hz
         b, a = sig.iirpeak(w, q)
+        #len 3
         return b, a
 
     def build_lpf(self):

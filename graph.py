@@ -1,38 +1,40 @@
 #!/usr/bin/env/ python
 import numpy as nmp
+import scipy.signal as sig
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as grs
 import matplotlib.patches as pch
-import scipy.signal as sig
-from numpy.fft import rfft
 from scipy.signal import welch
 
 class Graph:
 
-    def __init__(self, Fs, Ns, FM):
+    def __init__(self, Fs, Ns, station):
         self.Fs = Fs
         self.Ns = Ns
-        self.FM = FM / 1e6
-        self.fm = []
-        self.fm_bpf = []
+        self.station = station / 1e6
+        self.dec_rate = 12
         self.clk = []
-        self.bb = []
-        self.bb2 = []
-        self.bb3 = []
         self.sym = []
-        self.phz_offset = []
-        self.cos = []
-        self.sin = []
         self.phz = []
         self.amp = []
         self.I = []
         self.Q = []
-        self.pi = []
-        self.pt = []
-        self.ps = []
-        self.rt = []
 
-    def update(self):
+    def update(self, x2, x3, x4, phz, x6, clk, pi, pt, ps, rt, v_cnt, cnt, snr):
+        self.fm = x2
+        self.fm_bpf = x3
+        self.bb = x4
+        self.bb_rrc = x6
+        self.phz_offset = phz
+        self.clk = clk
+        self.pi = pi
+        self.pt = pt
+        self.ps = ''.join(ps)
+        self.rt = ''.join(rt)
+        self.v_cnt = v_cnt
+        self.cnt = cnt
+        self.snr = nmp.around(snr, decimals=1)
+
         fig = plt.figure(1)
         plt.clf()
         #3x1 grid with narrow plot on bottom for text
@@ -42,12 +44,12 @@ class Graph:
         self.scope()
         self.psd()
         self.constellation()
-        #self.text()
+        self.text()
         self.costas()
-        #plt.pause(10)
+        #plt.pause(3)
         plt.show()
 
-        fig2 = plt.figure(2)
+        fig3 = plt.figure(2)
         self.scope2()
         plt.show()
 
@@ -59,10 +61,6 @@ class Graph:
         f = f/1e3
         Y = 20 * nmp.log10(Y) + 130
 
-        fbb, Ybb = welch(self.fm_bpf, fs=self.Fs, nfft=N, return_onesided=False)
-        fbb = fbb/1e3
-        Ybb = 20 * nmp.log10(Ybb) + 150
-
         ax.set_xlim([0, max(f)])
         ax.set_ylim([0, 50])
         ax.set_xticks(nmp.arange(0, max(f), 10))
@@ -72,38 +70,43 @@ class Graph:
         rds = pch.Rectangle((57-2.4, 0), 4.8, 100, alpha=0.4, facecolor='m')
         ax.add_patch(rds)
         plt.bar(f, Y, width=0.1)
-        plt.bar(fbb, Ybb, width=0.1)
-        #plt.plot([57, 57], [0, 50], 'C1', alpha=0.1, linewidth=100)
+        plt.text(57, 45, '{} dB'.format(self.snr), size=10, horizontalalignment='center')
 
     def scope(self):
         ax = plt.subplot(self.gs[1, 1])
-        a = 1000
-        b = a + 300
+        a = 60000
+        b = a + 600
         t = nmp.arange(a, b)
-        y0 = self.fm_bpf[a:b]
-        y1 = self.bb[a:b]
-        y2 = self.bb2[a:b]
+        t2 = nmp.arange(a,b,6)
+        y0 = self.fm_bpf[a-6:b-6]       #bpf causes 6 delay (12 taps)
+        y1 = self.bb[a-6:b-6]
+        y2 = self.bb_rrc[a/6 + 60:a/6+100 + 60] #RRC causes 60 delay (121 taps)
+        y3 = self.clk[a/6 + 60:a/6+100 + 60] #RRC causes 60 delay (121 taps)
         plt.plot(t, y0)
         plt.plot(t, y1)
-        plt.plot(t, y2)
+        plt.plot(t2, y2)
+        plt.plot(t2, y3, 'm')
 
     def scope2(self):
-        a = 100000
-        b = a + 5000
+        a = 50000
+        b = a + 1200
         t = nmp.arange(a, b)
-        #t2 = nmp.arange(21000, 21000+1800)
-        y0 = self.fm_bpf[a:b]
+        t2 = nmp.arange(a,b,self.dec_rate)
+        y0 = self.fm_bpf[a:b]       #bpf causes 6 delay (12 taps)
         y1 = self.bb[a:b]
-        y2 = self.bb2[a:b]
-        #y3 = self.bb3
-        #plt.plot(t, y0)
-        plt.plot(y1)
-        plt.plot(y2)
+        #y0 = self.fm_bpf[a-6:b-6]       #bpf causes 6 delay (12 taps)
+        #y1 = self.bb[a-6:b-6]
+        y2 = self.bb_rrc[a/self.dec_rate + 60:a/self.dec_rate+100 + 60] #RRC causes 60 delay (121 taps)
+        y3 = self.clk[a/self.dec_rate + 60:a/self.dec_rate+100 + 60] #RRC causes 60 delay (121 taps)
+        plt.plot(t, y0)
+        plt.plot(t, y1)
+        plt.plot(t2, y2)
+        plt.plot(t2, y3, 'm')
 
     def constellation(self):
         ax = plt.subplot(self.gs[1, 2])
-        ax.set_xticks([])
-        ax.set_yticks([])
+        #ax.set_xticks([])
+        #ax.set_yticks([])
         ax.set_xlabel(r'$\mathtt{I}$')
         ax.set_ylabel('Q')
         plt.plot(self.I, self.Q, '.', alpha=0.5)
@@ -115,13 +118,18 @@ class Graph:
         plt.plot(self.phz_offset)
 
     def text(self):
-        ax = plt.subplot(self.gs[2, :])
-        plt.text(0, 1.0, 'TUNE: {} MHz'.format(self.FM))
-        plt.text(0, 0.8, 'PI: {}'.format(self.pi))
-        plt.text(0, 0.6, 'PT: {}'.format(self.pt))
-        #plt.text(0, 0.4, 'PS: {}'.format(self.ps))
-        plt.text(0, 0.2, 'RT: {}'.format(self.rt))
+        ax = plt.subplot(self.gs[2, 0])
         plt.axis('off')
+        plt.text(0, 0.8, '{}'.format(self.ps), size=20)
+        plt.text(0, 0.2, '{}'.format(self.rt), size=20)
+        ax = plt.subplot(self.gs[2, 1])
+        plt.axis('off')
+        plt.text(0.5, 0.8, '{}MHz - {} - {}'.format(self.station, self.pi,
+            self.pt), size=20, horizontalalignment='center')
+        ax = plt.subplot(self.gs[2, 2])
+        plt.axis('off')
+        plt.text(1, 0.8, '{} / {}'.format(self.v_cnt, self.cnt), size=20, \
+                horizontalalignment='right')
 
     def time(self, samples):
         plt.figure()
@@ -137,13 +145,14 @@ class Graph:
         plt.plot(clk, 'g')
         plt.show()
 
-    def bb2(self, samples):
-        plt.figure()
-        plt.psd(samples, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
+    def bb2(self):
+        N = 512
+        f, Y = welch(self.bb, fs=self.Fs, nfft=N, return_onesided=False)
+        f = f/1e3
+        Y = 20 * nmp.log10(Y)
+        plt.plot(f,Y)
+        #plt.psd(self.bb, NFFT=2048, Fs=self.Fs/1000)
         #plt.psd(self.clk, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
-        plt.ylim([-25, 0])
-        plt.yticks(nmp.arange(-25, 0, 5))
-        plt.show()
 
     def filter_response(self, b, a):
         w,h = sig.freqz(b,a)
