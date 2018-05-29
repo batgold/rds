@@ -6,8 +6,30 @@ import matplotlib.gridspec as grs
 import matplotlib.patches as pch
 from scipy.signal import welch
 from constants import *
+from Queue import Queue
+from pyqtgraph.Qt import QtGui
+import pyqtgraph as pyg
 
+def memo(func):
+    memo = {}
+    def wrap(*args):
+        if not args in memo:
+            memo[args] = func(*args)
+        return memo[args]
+    return wrap
+
+@memo
 class Graph:
+
+    def __init__(self, r):
+        r += 1
+        print r
+
+    def update(self, x):
+        plt.plot(x)
+        plt.show()
+
+class Graph2:
 
     def __init__(self, Fs, Ns, station):
         self.Fs = Fs
@@ -160,13 +182,15 @@ class Graph:
         plt.plot(w/nmp.pi*self.Fs/2/1e3, abs(h))
         return None
 
-def response(taps):
+def response(taps, f):
     b = taps[0]
     a = taps[1]
     w, h = sig.freqz(b,a)
-    w = w/pi/2 * fs/1e3
-    h = nmp.log10(h)
+    w = w/pi/2 * f/1e3
+    #h = nmp.log10(h)
+    h =abs(h)
     plt.figure()
     plt.plot(w,h)
+    #plt.pause(1)
+    #plt.show(block=False)
     plt.show()
-

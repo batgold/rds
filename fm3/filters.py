@@ -1,26 +1,30 @@
 #!/usr/bin/env python
 import numpy as nmp
-import commpy as com
+#import commpy as com
+import commpy.filters as com
 import scipy.signal as sig
-import matplotlib.pyplot as plt
-#from graph import Graph
 import graph
 from constants import *
+#from functools import wraps
+import functools
 
-class mem(object):
-    """memorize filter state"""
-    def __init__(self, function):
-        self.function = function
-        self.filter = None
+#def memo(func):
+#    memo = {}
+#    def helper(*args):
+#        if not args in memo:
+#            memo[args] = func()
+#        return memo[args]
+#    return helper
+#
+@functools.lru_cache()
+def demph_eq():
+    """De-Emphasis Filter"""
+    cutoff = -1 / (tau*fs/aud_dec)
+    b = [1 - nmp.exp(cutoff)]
+    a = [1, -nmp.exp(cutoff)]
+    return b, a
 
-    def __call__(self):
-        if not self.filter:
-            self.filter = self.function()
-            print 'mem'
-            #graph.response(self.filter)
-        return self.filter
 
-@mem
 def mono_lpf():
     n = 4
     cutoff = 17e3
@@ -28,41 +32,12 @@ def mono_lpf():
     b, a = sig.butter(N=n, Wn=w, btype='lowpass', analog=False)
     return b, a
 
-@mem
-def dempf_eq():
-    """De-Emphasis Filter"""
-    cutoff = -1 / (tau*fs/aud_dec)
-    b = [1 - nmp.exp(cutoff)]
-    a = [1, -nmp.exp(cutoff)]
-    return b, a
-
-def __init__(self, Fs, Fsym, dec_rate):
-    self.Fs = Fs
-    self.Fc = 57e3
-    self.Fsym = Fsym
-    self.dec_rate = dec_rate
-    self.graph = Graph(Fs, 1, 1)
-    self.costas_bw = 10
-
-    if self.Fsym == 0:
-        self.mono_lpf = self.build_mono_lpf()
-        self.de_empf = self.build_de_empf()
-    else:
-        self.fpilot = int(19e3)
-        self.rrc = self.build_rrc()
-        self.bpf = self.build_bpf()
-        #self.build_bpf2()
-        self.ipf = self.build_ipf()
-        self.clk = self.build_clk()
-        self.lpf = self.build_lpf()
-        self.costas_lpf = self.build_costas_lpf()
-
 def build_rrc(self):
     """Cosine Filter"""
     N = int(121)
     T = 1/self.Fsym/2
     alfa = 1 #put 8 samples per sym period. i.e. 16+1 in the main lobe
-    __,rrc = com.filters.rrcosfilter(N, alfa, T, self.Fs/self.dec_rate)
+    __,rrc = com.rrcosfilter(N, alfa, T, self.Fs/self.dec_rate)
     return rrc
 
 def bpf():

@@ -168,5 +168,6 @@ def response(taps):
     h = nmp.log10(h)
     plt.figure()
     plt.plot(w,h)
-    plt.show()
+    plt.pause(1)
+    #plt.show(block=False)
 

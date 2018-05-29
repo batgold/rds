@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import sys
 import pickle
+import demod
 from rtlsdr import RtlSdr
-from demod import demod_fm
 from constants import fs, ns
 
 def callback(samples, sdr):
@@ -11,14 +11,15 @@ def callback(samples, sdr):
     if r > 3:
         sdr.cancel_read_async()
     else:
-        demod_fm(samples, r)
+        demod.spawn_threads(samples)
 
 def main():
+
     if source == '-f':
         filename = sys.argv[2]
         with open(filename, 'rb') as f:
             samples = pickle.load(f)
-        demod_fm(samples, r)
+        demod.spawn_threads(samples)
 
     elif source == '-r':
         station = float(sys.argv[2]) * 1e6

@@ -2,36 +2,42 @@
 import sys
 import numpy as nmp
 import scipy.signal as sig
-from filters import Filters
 from graph import Graph
-from rtlsdr import RtlSdr
 from constants import *
+import filters
+import player
+from functools import wraps
+from threading import Thread
 
 phz_offset = 0
 n = 0
 
-#graph = Graph(Fs, Ns, station)
-filters = Filters(fs, fsym, dec_rate)
+def demod_fm(x, r):
+    x = x[1:] * nmp.conj(x[:-1])
+    x = nmp.angle(x)
 
-class Group:
-    """104 bit group, verified"""
-    def __init__(self, bits):
-        self.pi = ''
-        self.pt = ''
-        self.gt = ''
-        self.ps = ['_']*8
-        self.rt = ['_']*64
-        self.bits = bits
+    #if not r:
+    fm_player = player.Player()
 
-    def decode(self):
-        print self.bits[1]
+    audio = demod_audio(x)
+    fm_player.play(audio)
+    #rds = demod_rds(x)
 
-def demod(samples, station):
-    x1 = samples[1:] * nmp.conj(samples[:-1])    # 1:end, 0:end-1
-    x2 = nmp.angle(x1)
-    x3 = sig.lfilter(filters.bpf[0], filters.bpf[1], x2) # BPF
+def demod_audio(x):
+    dempf = filters.dempf_eq()
+    x = sig.decimate(x, aud_dec, zero_phase=True)
+    x = sig.lfilter(dempf[0], dempf[1], x)
+    x = x * 7000
+    x = x.astype('int16')
+    return x
+
+def demod_rds(x):
+    print 'rds'
+    bpf = filters.bpf()
+    x3 = sig.lfilter(bpf[0], bpf[1], x) # BPF
+    return x3
     x4, phz = costas(x3)
-    x5 = sig.decimate(x4, dec_rate, zero_phase=True)
+    x5 = sig.decimate(x4, rds_dec, zero_phase=True)
     x6 = 0.3*sig.lfilter(filters.rrc, 1, x5)
     clk = 0.5*recover_clock(x5)
     sym = recover_symbols(clk, x6)
@@ -40,6 +46,15 @@ def demod(samples, station):
     snr = calc_snr(x2)
     #graph.update(x2, x3, x4, phz, x6, clk, self.pi_sync, self.pt_sync, \
         #self.ps, self.rt, self.valid_group_cnt, self.group_cnt, snr)
+
+def run_async(function):
+    """david gaarenstroom"""
+    @wraps(function)
+    def async_function(*args, **kwargs):
+        func_hl = Thread(target=function, args=args, kwargs=kwargs)
+        func_hl.start()
+        return func_hl
+    return async_function
 
 def demod2(samples, Fs, Ns, station):
     x1 = samples[1:] * nmp.conj(samples[:-1])    # 1:end, 0:end-1
@@ -57,6 +72,19 @@ def demod2(samples, Fs, Ns, station):
     self.graph.update(x2, x3, x4, phz, x6, clk, self.pi_sync, self.pt_sync, \
         self.ps, self.rt, self.valid_group_cnt, self.group_cnt, snr)
     #self.print_code()
+
+class Group:
+    """104 bit group, verified"""
+    def __init__(self, bits):
+        self.pi = ''
+        self.pt = ''
+        self.gt = ''
+        self.ps = ['_']*8
+        self.rt = ['_']*64
+        self.bits = bits
+
+    def decode(self):
+        print self.bits[1]
 
 def calc_snr(x):
     F, Y = sig.welch(x, fs=fs, nfft=2048, return_onesided=False)
