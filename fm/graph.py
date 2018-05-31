@@ -7,27 +7,73 @@ import matplotlib.patches as pch
 from scipy.signal import welch
 from constants import *
 from Queue import Queue
-from pyqtgraph.Qt import QtGui
+from multiprocessing import Process
+from PyQt4 import QtGui
 import pyqtgraph as pyg
 
+def display(name, q):
+    print 'graph'
+
+    while not q.empty():
+        q.get()
+
+    print q[0:2]
+    app = QtGui.QApplication([])
+
+    win = pyg.GraphicsWindow(title='BTG')
+    p = win.addPlot()
+    x = p.plot()
+
+    app.exec_()
+
 def memo(func):
-    memo = {}
+    memo2 = {}
     def wrap(*args):
-        if not args in memo:
-            memo[args] = func(*args)
-        return memo[args]
+        if not args in memo2:
+            memo2[args] = func(*args)
+        return memo2[args]
     return wrap
 
 @memo
 class Graph:
+    "start, put, update, join"
 
-    def __init__(self, r):
-        r += 1
-        print r
+    def __init__(self):
+        self.que = Queue()
+        self.r = 0
 
-    def update(self, x):
-        plt.plot(x)
-        plt.show()
+    def _update(self):
+        while not self.que.empty():
+            print 'plot'
+            data = self.que.get()
+            self.line.setData(data)
+
+    def run(self):
+        white = pyg.mkColor("#E7E7F1"+"05")
+        black = "#0E1019"
+
+        app = QtGui.QApplication([])
+
+        pyg.setConfigOption('background', black)
+        win = pyg.GraphicsWindow(title='BTG')
+        plot = win.addPlot()
+        self.line = plot.plot(pen=white, alpha=0.1)
+        plot.showGrid(x=True, y=True, alpha=0.3)
+        plot.showAxis('top')
+        plot.showAxis('right')
+        #plot.showLabel(axis='top',show=False)
+        #plot.showLabel(axis='right',show=False)
+        plot.setLabel(axis='bottom', text='SAMPLES')
+        plot.setLabel(axis='left', text='AMP', units='V')
+
+        axis = pyg.AxisItem('top',showValues=False)
+        axis = pyg.AxisItem('top',showValues=True)
+        #axis.showValues(False)
+
+        print 'update'
+        self._update()
+
+        app.exec_()
 
 class Graph2:
 

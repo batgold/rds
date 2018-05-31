@@ -8,6 +8,7 @@ import filters
 import player
 from functools import wraps
 from threading import Thread
+import time
 
 phz_offset = 0
 n = 0
@@ -23,11 +24,13 @@ def demod_audio(x):
     x = sig.lfilter(demph[0], demph[1], x)
     player.Player().play(x)
 
-def demod_rds(x, q):
+def demod_rds(x):
     bpf = filters.bpf()
     rrc = filters.rrc()
     x3 = sig.lfilter(bpf[0], bpf[1], x) # BPF
-    q.put(x3)
+    gr = graph.Graph()
+    print 'put'
+    gr.que.put(x3)
     return
     x4, phz = costas(x3)
     x5 = sig.decimate(x4, rds_dec, zero_phase=True)

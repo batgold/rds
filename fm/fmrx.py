@@ -2,22 +2,28 @@
 import sys
 import pickle
 import demod
+import graph
 from rtlsdr import RtlSdr
 from constants import fs, ns
 from Queue import Queue
+from multiprocessing import Process
 from threading import Thread
 
 def start_proc(samples):
     fm = demod.demod_fm(samples)
-    audio_thread = Thread(target=demod.demod_audio, args=(fm))
-    rds_thread = Thread(target=demod.demod_rds, args=(fm, q))
+    gr = graph.Graph()
+    graph_thread = Process(target=gr.run)
+    graph_thread.start()
+    audio_thread = Thread(target=demod.demod_audio, args=(fm,))
     audio_thread.start()
+    rds_thread = Thread(target=demod.demod_rds, args=(fm,))
     rds_thread.start()
+    #graph_thread.join()  << this holds the graph until i close it
 
 def callback(samples, sdr):
     global r
     r += 1
-    if r > 3:
+    if r > 2:
         sdr.cancel_read_async()
     else:
         start_proc(samples)
@@ -42,7 +48,6 @@ def main():
 
 if __name__ == "__main__":
     r = 0
-    q = Queue()
     source = sys.argv[1]
     source_val = sys.argv[2]
 
