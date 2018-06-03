@@ -18,39 +18,23 @@ def demod_fm(x):
     fm = nmp.angle(x)
     return fm
 
-def demod_audio(x):
-    demph = filters.demph_eq()
-    x = sig.decimate(x, aud_dec, zero_phase=True)
-    x = sig.lfilter(demph[0], demph[1], x)
-    player.Player().play(x)
-
 def demod_rds(x):
+    gr = graph.Graph()
     bpf = filters.bpf()
     rrc = filters.rrc()
-    x3 = sig.lfilter(bpf[0], bpf[1], x) # BPF
-    gr = graph.Graph()
+    x_bpf = sig.lfilter(bpf[0], bpf[1], x) # BPF
+    #x_costas, phz = costas(x_bpf)
+    x_costas = x_bpf
+    x_dec = sig.decimate(x_costas, rds_dec, zero_phase=True)
+    x_rrc = sig.lfilter(rrc[0], rrc[1], x_dec)
+    x_sym = recover_symbols(x_rrc)
+    x_bits = nmp.bitwise_xor(x_sym[1:], x_sym[:-1])
+    #group_sync(x_bits)
+    snr = calc_snr(x_bpf)
     print 'put'
-    gr.que.put(x3)
-    return
-    x4, phz = costas(x3)
-    x5 = sig.decimate(x4, rds_dec, zero_phase=True)
-    x6 = sig.lfilter(rrc[0], rrc[1], x5)
-    clk = 0.5*recover_clock(x5)
-    sym = recover_symbols(clk, x6)
-    bits = nmp.bitwise_xor(sym[1:], sym[:-1])
-    group_sync(bits)
-    snr = calc_snr(x2)
+    gr.que.put(x_bpf)
     #graph.update(x2, x3, x4, phz, x6, clk, self.pi_sync, self.pt_sync, \
         #self.ps, self.rt, self.valid_group_cnt, self.group_cnt, snr)
-
-def run_async(function):
-    """david gaarenstroom"""
-    @wraps(function)
-    def async_function(*args, **kwargs):
-        func_hl = Thread(target=function, args=args, kwargs=kwargs)
-        func_hl.start()
-        return func_hl
-    return async_function
 
 def demod2(samples, Fs, Ns, station):
     x1 = samples[1:] * nmp.conj(samples[:-1])    # 1:end, 0:end-1
@@ -156,11 +140,13 @@ def recover_carrier2(self, x):
     return nmp.exp(1j*2*nmp.pi*Fc/self.Fs*t)
 
 def recover_clock(x):
-    y0 = sig.lfilter(filters.clk[0], filters.clk[1], x)
+    clk = filters.clk()
+    y0 = sig.lfilter(clk[0], clk[1], x)
     y1 = nmp.array(y0 > 0)
     return y1 - 0.5
 
-def recover_symbols(clk, x):
+def recover_symbols(x):
+    clk = recover_clock(x)
     zero_xing = nmp.where(nmp.diff(nmp.sign(clk)))[0]
     #zero_xing = zero_xing[::2]
     zero_xing = zero_xing[1:-70:2]

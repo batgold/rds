@@ -73,10 +73,11 @@ def build_ipf(self):
     b, a = sig.iirpeak(w, q)
     return b, a
 
-def build_clk(self):
+@memo
+def clk():
     """Infinite (impulse response) Peak Filter at Symbol Rate 1187.5Hz"""
-    w = self.Fsym / float(self.Fs / self.dec_rate / 2.0)
-    q = w / 4.0 * self.Fs * self.dec_rate         # Q = f/bw, BW = 4 Hz
+    w = fsym / float(fs / rds_dec / 2.0)
+    q = w / 4.0 * fs * rds_dec         # Q = f/bw, BW = 4 Hz
     b, a = sig.iirpeak(w, q)
     #len 3
     return b, a

@@ -11,6 +11,7 @@ from multiprocessing import Process
 from PyQt4 import QtGui
 import pyqtgraph as pyg
 
+
 def display(name, q):
     print 'graph'
 
@@ -40,19 +41,20 @@ class Graph:
 
     def __init__(self):
         self.que = Queue()
+        #self.make_graph()
         self.r = 0
 
     def _update(self):
         while not self.que.empty():
             print 'plot'
             data = self.que.get()
-            self.line.setData(data)
+            #self.line.setData(data)
 
-    def run(self):
+    def make_graph(self):
         white = pyg.mkColor("#E7E7F1"+"05")
         black = "#0E1019"
 
-        app = QtGui.QApplication([])
+        self.app = QtGui.QApplication([])
 
         pyg.setConfigOption('background', black)
         win = pyg.GraphicsWindow(title='BTG')
@@ -69,19 +71,15 @@ class Graph:
         axis = pyg.AxisItem('top',showValues=False)
         axis = pyg.AxisItem('top',showValues=True)
         #axis.showValues(False)
+        self.app.exec_()
 
+    def run(self):
         print 'update'
         self._update()
 
-        app.exec_()
-
 class Graph2:
 
-    def __init__(self, Fs, Ns, station):
-        self.Fs = Fs
-        self.Ns = Ns
-        self.station = station / 1e6
-        self.dec_rate = 12
+    def init(self):
         self.clk = []
         self.sym = []
         self.phz = []
@@ -90,18 +88,6 @@ class Graph2:
         self.Q = []
 
     def update(self, x2, x3, x4, phz, x6, clk, pi, pt, ps, rt, v_cnt, cnt, snr):
-        self.fm = x2
-        self.fm_bpf = x3
-        self.bb = x4
-        self.bb_rrc = x6
-        self.phz_offset = phz
-        self.clk = clk
-        self.pi = pi
-        self.pt = pt
-        self.ps = ''.join(ps)
-        self.rt = ''.join(rt)
-        self.v_cnt = v_cnt
-        self.cnt = cnt
         self.snr = nmp.around(snr, decimals=1)
 
         fig = plt.figure(1)
