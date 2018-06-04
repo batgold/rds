@@ -2,79 +2,79 @@
 import sys
 import pickle
 import demod
-import graph
-from rtlsdr import RtlSdr
-from constants import fs, ns
-from Queue import Queue
+import rtlsdr
 import multiprocessing as mpr
-from threading import Thread
-import numpy as nmp
 import player
-
-def start_proc(samples):
-    fm = demod.demod_fm(samples)
-    #gr = graph.Graph()
-    #rds_proc = mpr.Process(target=demod.demod_rds, args=(fm,))
-    parent_conn, child_conn = multiprocessing.Pipe()
-
-    audio_proc = mpr.Process(target=demod.demod_audio, args=(parent_conn, fm))
-    graph_proc = mpr.Process(target=gr.run, args=(child_conn,))
-
-    #audio_thread = Thread(target=demod.demod_audio, args=(fm,))
-    #audio_thread.start()
-
-    #rds_thread = Thread(target=demod.demod_rds, args=(fm,))
-    audio_proc.start()
+import constants
 
 def callback(samples, sdr):
-    global r
-    r += 1
-    if r > rpt:
+    global n
+    n += 1
+    if n > n_max:
+        q1.put(None)
+        q2.put(None)
         sdr.cancel_read_async()
     else:
-        print 'sent', r
         fm = demod.demod_fm(samples)
-        parent.send(fm)
+        #parent.send(fm)
+        q1.put(fm)
+        print 'q1-put', n
 
-def audio(child):
-    audio.count = 0
-    while True:
-        msg = child.recv()
-        audio.count += 1
-        if audio.count == rpt:
-            break
-        player.Player().play(msg)
+        q2.put(fm)
+        print 'q2-put', n
 
 def read_file(filename):
     with open(filename, 'rb') as f:
         samples = pickle.load(f)
     start_proc(samples)
 
-def read_rtlsdr(parent, station):
-    station = float(station) * 1e6
-    sdr = RtlSdr()
-    sdr.sample_rate = fs
-    sdr.center_freq = station
+def rx(q):
+    while True:
+        data = q.get(timeout=5)
+        if data is None:
+            print 'break'
+            break
+        print 'q1-get', data[0]
+        player.play(data)
+
+def rx2(q):
+    while True:
+        data = q.get(timeout=5)
+        if data is None:
+            print 'break'
+            break
+        print 'q2-get', data[0]
+
+
+def read_rtlsdr(station):
+    sdr = rtlsdr.RtlSdr()
     sdr.gain = 'auto'
+    sdr.sample_rate = constants.fs
+    sdr.center_freq = float(station) * 1e6
     sdr.read_samples_async(
-            callback=callback, num_samples=ns, context=sdr)
+            callback=callback, num_samples=constants.ns, context=sdr)
     sdr.close()
 
 if __name__ == "__main__":
-    r = 0
-    rpt = 8
+    n = 0
+    n_max = 6
+
     arg1 = sys.argv[1]
     arg2 = sys.argv[2]
 
-    parent, child = mpr.Pipe()
+    q1 = mpr.Queue()
+    q2 = mpr.Queue()
+    #parent, child = mpr.Pipe()
 
-    p1 = mpr.Process(target=read_rtlsdr, args=(parent, arg2))
-    #p2 = mpr.Process(target=audio, args=(child,))
-    p2 = mpr.Process(target=player.receive, args=(child, rpt))
+    #p1 = mpr.Process(target=read_rtlsdr, args=(arg2,))
+    #p2 = mpr.Process(target=player.receive, args=(child, n_max))
+    p1 = mpr.Process(target=rx, args=(q1,))
+    p2 = mpr.Process(target=rx2, args=(q2,))
 
     p1.start()
     p2.start()
 
+    read_rtlsdr(arg2)
     p1.join()
     p2.join()
     #if arg1 == '-f':
