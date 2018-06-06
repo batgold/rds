@@ -4,28 +4,9 @@ import scipy.signal as sig
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as grs
 import matplotlib.patches as pch
-from scipy.signal import welch
-from constants import *
-from Queue import Queue
-from multiprocessing import Process
-from PyQt4 import QtGui
-import pyqtgraph as pyg
-
-
-def display(name, q):
-    print 'graph'
-
-    while not q.empty():
-        q.get()
-
-    print q[0:2]
-    app = QtGui.QApplication([])
-
-    win = pyg.GraphicsWindow(title='BTG')
-    p = win.addPlot()
-    x = p.plot()
-
-    app.exec_()
+import scipy.signal
+import constants
+import filters
 
 def memo(func):
     memo2 = {}
@@ -35,8 +16,63 @@ def memo(func):
         return memo2[args]
     return wrap
 
-@memo
 class Graph:
+
+    def scope(self, x_bpf, bb_lpf, bb_dec):
+        a = 48000
+        b = a + 960
+        delay = 40
+        self.time = nmp.arange(a, b)
+        self.x_bpf = x_bpf[a-delay:b-delay]
+        self.bb_lpf = bb_lpf[a:b]
+
+        a = a/constants.rds_dec
+        b = a + 960/constants.rds_dec
+        self.time_dec = nmp.arange(
+                a*constants.rds_dec, b*constants.rds_dec, constants.rds_dec)
+        self.bb_dec = bb_dec[a:b]
+
+    def spectrum(self, x):
+        n = 512
+        freq, power = scipy.signal.welch(
+                x, fs=constants.fs, nfft=n, return_onesided=True)
+        self.freq = freq * 1e-3
+        self.power = 20 * nmp.log10(power)
+
+    def spectrum2(self, x):
+        n = 512
+        freq, power = scipy.signal.welch(
+                x, fs=constants.fs/constants.rds_dec, nfft=n, return_onesided=True)
+        self.freq2 = freq * 1e-3
+        self.power2 = 20 * nmp.log10(power)
+
+    def run(self):
+        gs = grs.GridSpec(3,3, height_ratios=[4,4,1])
+
+        #scope
+        ax = plt.subplot(gs[0, :])
+        ax.plot(self.time, self.x_bpf)
+        ax.plot(self.time, self.bb_lpf, c='C1')
+        ax.plot(self.time_dec, self.bb_dec, c='C2', ls='None', marker='D')
+        ax.set_ylim([-0.2, 0.2])
+
+        #spectrum
+        ax = plt.subplot(gs[1, 1])
+        ax.plot(self.freq, self.power)
+        ax.set_ylim(bottom=-140)
+
+        #spectrum
+        ax = plt.subplot(gs[1, 0])
+        ax.plot(self.freq2, self.power2)
+        #ax.set_ylim(bottom=-140)
+        plt.pause(1.1)
+
+
+
+
+
+@memo
+class Graph3:
     "start, put, update, join"
 
     def __init__(self):
@@ -214,15 +250,16 @@ class Graph2:
         plt.plot(w/nmp.pi*self.Fs/2/1e3, abs(h))
         return None
 
-def response(taps, f):
+def response(taps):
     b = taps[0]
     a = taps[1]
     w, h = sig.freqz(b,a)
-    w = w/pi/2 * f/1e3
-    #h = nmp.log10(h)
-    h =abs(h)
-    plt.figure()
-    plt.plot(w,h)
-    #plt.pause(1)
-    #plt.show(block=False)
-    plt.show()
+    frq = w/nmp.pi/2 * constants.fs/1e3
+    amp = 20*nmp.log10(abs(h))
+    phz = nmp.unwrap(nmp.angle(h))*180/nmp.pi
+
+    _, ax = plt.subplots()
+    ax.plot(frq, amp, lw=0.7)
+    ax2 = ax.twinx()
+    ax2.plot(frq, phz, c='C2', ls='--', lw=0.7)
+    plt.show(block=False)

@@ -1,21 +1,19 @@
 #!/usr/bin/env python
 import pyaudio
 import constants
-import scipy.signal as sig
+import scipy.signal
 
-def receive(pipe, n_max):
-    receive.n = 0
+def receive(que):
     while True:
-        data = pipe.recv()
-        receive.n += 1
-        if receive.n == n_max:
+        data = que.get(timeout=5)
+        if data is None:
             break
         play(data)
 
 def format(data):
     """Format FM Signal to int16 string with 10k amplitude"""
-    decimated = sig.decimate(data, constants.aud_dec, zero_phase=True)
-    normalized = 1e4*decimated/max(decimated)
+    decimated = scipy.signal.decimate(data, constants.aud_dec, zero_phase=True)
+    normalized = 1e4 * decimated/max(decimated)
     stringed = str(bytearray(normalized.astype('int16')))
     return stringed
 

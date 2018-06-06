@@ -3,26 +3,45 @@ import sys
 import numpy as nmp
 import scipy.signal as sig
 import graph
-from constants import *
+import constants
 import filters
-import player
-from functools import wraps
-from threading import Thread
-import time
-
-phz_offset = 0
-n = 0
 
 def demod_fm(x):
     x = x[1:] * nmp.conj(x[:-1])
     fm = nmp.angle(x)
     return fm
 
-def demod_rds(x):
+def receive(que):
+    g = graph.Graph()
+    while True:
+        data = que.get(timeout=5)
+        if data is None:
+            break
+        demod_rds(data, g)
+
+def demod_rds(x, g):
+    bpf_57k = filters.bpf_57k()
+    peak_19k = filters.peak_19k()
+    lpf = filters.lpf()
+
+    x_bpf = sig.lfilter(bpf_57k[0], bpf_57k[1], x) # BPF
+    pilot_19 = sig.filtfilt(peak_19k[0], peak_19k[1], x)
+    pilot_57 = pilot_19**3
+    bb = x_bpf*pilot_57
+    bb_lpf = 1.2e3*sig.lfilter(lpf[0], lpf[1], bb)
+    bb_dec = bb_lpf[::constants.rds_dec]
+    #bb_dec = sig.decimate(
+            #bb_lpf, q=constants.rds_dec, ftype='iir', zero_phase=True)
+
+    g.scope(x_bpf, bb_lpf, bb_dec)
+    g.spectrum(x)
+    g.spectrum2(bb_dec)
+    g.run()
+
+    return
     gr = graph.Graph()
     bpf = filters.bpf()
     rrc = filters.rrc()
-    x_bpf = sig.lfilter(bpf[0], bpf[1], x) # BPF
     #x_costas, phz = costas(x_bpf)
     x_costas = x_bpf
     x_dec = sig.decimate(x_costas, rds_dec, zero_phase=True)
