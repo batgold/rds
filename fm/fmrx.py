@@ -7,7 +7,8 @@ import player
 import constants
 import multiprocessing
 
-@rtlsdr.limit_calls(7)
+max_calls = 7
+@rtlsdr.limit_calls(max_calls)
 def sdr_callback(samples, sdr):
     fm = demod.demod_fm(samples)
     aud_que.put(fm)
@@ -16,11 +17,13 @@ def sdr_callback(samples, sdr):
 def read_file(filename):
     with open(filename, 'rb') as f:
         samples = pickle.load(f)
-    start_proc(samples)
+    fm = demod.demod_fm(samples)
+    aud_que.put(fm)
+    rds_que.put(fm)
 
 def read_rtlsdr(station):
     sdr = rtlsdr.RtlSdr()
-    sdr.gain = 'auto'
+    sdr.gain = 400
     sdr.sample_rate = constants.fs
     sdr.center_freq = float(station) * 1e6
     sdr.read_samples_async(
@@ -31,23 +34,24 @@ if __name__ == "__main__":
     arg1 = sys.argv[1]
     arg2 = sys.argv[2]
 
+    aud_que = multiprocessing.Queue()
+    rds_que = multiprocessing.Queue()
+    aud_proc = multiprocessing.Process(target=player.receive, args=(aud_que,))
+    rds_proc = multiprocessing.Process(target=demod.receive, args=(rds_que,))
+
+    aud_proc.start()
+    rds_proc.start()
+
     if arg1 == '-f':
-        read_file(arg1)
+        read_file(arg2)
 
     elif arg1 == '-r':
-        aud_que = multiprocessing.Queue()
-        rds_que = multiprocessing.Queue()
-        aud_proc = multiprocessing.Process(target=player.receive, args=(aud_que,))
-        rds_proc = multiprocessing.Process(target=demod.receive, args=(rds_que,))
-
-        aud_proc.start()
-        rds_proc.start()
-
         read_rtlsdr(arg2)
-        aud_que.put(None)
-        rds_que.put(None)
 
-        aud_proc.join()
-        rds_proc.join()
+    aud_que.put(None)
+    rds_que.put(None)
+
+    aud_proc.join()
+    rds_proc.join()
 
 #geeksforgeeks.com/multiprocessing

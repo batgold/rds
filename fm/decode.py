@@ -2,66 +2,10 @@
 import sys
 import numpy as nmp
 import scipy.signal as sig
-import decode
 import graph
 import constants
 import filters
 
-def demod_fm(x):
-    x = x[1:] * nmp.conj(x[:-1])
-    fm = nmp.angle(x)
-    return fm
-
-def receive(que):
-    g = graph.Graph()
-    while True:
-        data = que.get(timeout=5)
-        if data is None:
-            break
-        demod_rds(data, g)
-        #demod_old(data, g)
-
-def demod_rds(x, g):
-    bpf_57k = filters.bpf_57k()
-    peak_19k = filters.peak_19k()
-    lpf = filters.lpf()
-    clk = filters.clk()
-
-    x_bpf = sig.lfilter(bpf_57k[0], bpf_57k[1], x) # BPF
-    pilot_19 = sig.filtfilt(peak_19k[0], peak_19k[1], x)
-    pilot_57 = pilot_19**3
-    bb = x_bpf*pilot_57
-    bb_lpf = 1.2e3*sig.lfilter(lpf[0], lpf[1], bb)
-    bb_dec = bb_lpf[::constants.rds_dec]
-    #bb_dec = sig.decimate(
-            #bb_lpf, q=constants.rds_dec, ftype='iir', zero_phase=True)
-
-    fsym = constants.fsym/(constants.fs/constants.rds_dec)
-    bb_i = bb_dec * nmp.cos(2*nmp.pi*2*fsym*nmp.arange(len(bb_dec)))
-    bb_q = bb_dec * nmp.sin(2*nmp.pi*2*fsym*nmp.arange(len(bb_dec)))
-
-    #bb_phz = nmp.arctan2(bb_q, bb_i)
-    rate = int(constants.fs/constants.rds_dec/constants.fsym)
-
-    #clk_tone = sig.lfilter(clk[0], clk[1], bb_dec)
-    #clk = (clk_tone > 0)
-    #clk = clk - 0.5
-
-    symbols = (bb_i > 0)
-    symbols = symbols[::rate]
-    #symbols = nmp.abs(bb_phz) < nmp.pi/2
-    #bb_i = bb_i[::rate]
-    #bb_q = bb_q[::rate]
-    #symbols = (bb_i > 0)
-    bits = nmp.bitwise_xor(symbols[1:], symbols[:-1])
-
-    g.scope(x_bpf, bb_lpf, bb_dec, symbols, bb_i)
-    g.spectrum(x)
-    g.spectrum2(bb_dec)
-    g.constellation(bb_i, bb_q, rate)
-    g.run()
-
-    decode.group_sync(bits)
 
 def group_sync(bits):
     n = 0

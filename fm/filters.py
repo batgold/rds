@@ -37,12 +37,13 @@ def mono_lpf():
     b, a = sig.butter(N=n, Wn=w, btype='lowpass', analog=False)
     return b, a
 
+@memo
 def rrc():
     """Root-Raised Cosine Filter"""
     n = int(121)
-    T = 1/fsym/2
+    T = 1/constants.fsym/2
     alfa = 1 #put 8 samples per sym period. i.e. 16+1 in the main lobe
-    __, b = com.rrcosfilter(n, alfa, T, fs/rds_dec)
+    __, b = com.rrcosfilter(n, alfa, T, constants.fs/constants.rds_dec)
     return b, 1
 
 @memo
@@ -66,16 +67,17 @@ def lpf():
 def peak_19k():
     """Infinite (impulse response) Peak Filter at 19kHz"""
     w = constants.fpil/(constants.fs/2)
-    q = w / (500 / (constants.fs/2))        # Q = f/bw, BW = 500 Hz
+    #q = w / (500 / (constants.fs/2))        # Q = f/bw, BW = 500 Hz
+    q = w / 16.0 * constants.fs
     b, a = sig.iirpeak(w, q)
     return b, a
 
+@memo
 def clk():
     """Infinite (impulse response) Peak Filter at Symbol Rate 1187.5Hz"""
-    w = fsym / float(fs / rds_dec / 2.0)
-    q = w / 4.0 * fs * rds_dec         # Q = f/bw, BW = 4 Hz
+    w = constants.fsym / float(constants.fs / constants.rds_dec / 2.0)
+    q = w / 4.0 * constants.fs * constants.rds_dec         # Q = f/bw, BW = 4 Hz
     b, a = sig.iirpeak(w, q)
-    #len 3
     return b, a
 
 def build_lpf(self):

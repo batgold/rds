@@ -2,6 +2,7 @@
 import pyaudio
 import constants
 import scipy.signal
+import mute_alsa
 
 def receive(que):
     while True:

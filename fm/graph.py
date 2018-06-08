@@ -18,19 +18,24 @@ def memo(func):
 
 class Graph:
 
-    def scope(self, x_bpf, bb_lpf, bb_dec):
+    def scope(self, x_bpf, bb_lpf, bb_dec, bb_phz, bb_i):
+        #natural rate
         a = 48000
-        b = a + 960
-        delay = 40
+        b = a + 2*960
+        #delay = 40
+        delay = 60
         self.time = nmp.arange(a, b)
         self.x_bpf = x_bpf[a-delay:b-delay]
         self.bb_lpf = bb_lpf[a:b]
 
+        #decimated rate
         a = a/constants.rds_dec
-        b = a + 960/constants.rds_dec
+        b = a + 2*960/constants.rds_dec
         self.time_dec = nmp.arange(
                 a*constants.rds_dec, b*constants.rds_dec, constants.rds_dec)
         self.bb_dec = bb_dec[a:b]
+        self.bb_phz = 0.2/nmp.pi*bb_phz[a:b]
+        self.bb_i = bb_i[a:b]
 
     def spectrum(self, x):
         n = 512
@@ -46,14 +51,20 @@ class Graph:
         self.freq2 = freq * 1e-3
         self.power2 = 20 * nmp.log10(power)
 
+    def constellation(self, i, q, rate):
+        self.i = i
+        self.q = q
+
     def run(self):
         gs = grs.GridSpec(3,3, height_ratios=[4,4,1])
 
         #scope
         ax = plt.subplot(gs[0, :])
-        ax.plot(self.time, self.x_bpf)
-        ax.plot(self.time, self.bb_lpf, c='C1')
+        ax.plot(self.time, self.x_bpf, c='C1')
+        ax.plot(self.time, self.bb_lpf, c='C0', lw=1.8)
         ax.plot(self.time_dec, self.bb_dec, c='C2', ls='None', marker='D')
+        #ax.plot(self.time_dec, self.bb_phz, c='r')
+        ax.plot(self.time_dec, self.bb_i, c='m', lw=4)
         ax.set_ylim([-0.2, 0.2])
 
         #spectrum
@@ -64,8 +75,12 @@ class Graph:
         #spectrum
         ax = plt.subplot(gs[1, 0])
         ax.plot(self.freq2, self.power2)
-        #ax.set_ylim(bottom=-140)
-        plt.pause(1.1)
+
+        #constellation
+        ax = plt.subplot(gs[1,2])
+        ax.plot(self.i, self.q, ls='None', marker='.', alpha=0.5)
+
+        plt.pause(0.1)
 
 
 
