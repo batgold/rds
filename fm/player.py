@@ -5,6 +5,7 @@ import scipy.signal
 import mute_alsa
 
 def receive(que):
+    """Get Data From Demod"""
     while True:
         data = que.get(timeout=5)
         if data is None:
@@ -19,6 +20,7 @@ def format(data):
     return stringed
 
 def play(data):
+    """Play FM Audio"""
     data = format(data)
     stream = pyaudio.PyAudio().open(
             format=pyaudio.paInt16, channels=1, rate=int(constants.fa), output=True)

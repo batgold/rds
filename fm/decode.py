@@ -4,31 +4,17 @@ import graph
 import constants
 
 def group_sync(bits):
-    n = 0
-    groups = []
-
-    while n < len(bits) - 104:
-        n += 1
+    """Find Sync in Stream, Unpack Following Bits"""
+    for n in xrange(0, len(bits)-104):
         frame = bits[n:n+104]
         if group_syndrome(frame) == constants.syndromes:
             print 'sync'
-            unpack_msg(frame)
             break
 
-    for m in range(n, len(bits), 104):
-        frame = bits[m:m+104]
-        groups.append(frame)
-
-    unpack_groups(groups)
-
-def block_syndrome(bits):
-    syn = 0
-    for n, bit in enumerate(bits):
-        if bit:
-            syn = nmp.bitwise_xor(syn, constants.parity[n])
-    return syn
+    [unpack_msg(bits[m:m+104]) for m in xrange(n-104,len(bits)-104,104)]
 
 def group_syndrome(frame):
+    """Calculate Group Syndrome"""
     syn = {}
     syn['A'] = block_syndrome(frame[:26])
     syn['B'] = block_syndrome(frame[26:52])
@@ -36,11 +22,16 @@ def group_syndrome(frame):
     syn['D'] = block_syndrome(frame[78:])
     return syn
 
-def unpack_groups(groups):
-    for group in groups:
-        unpack_msg(group)
+def block_syndrome(bits):
+    """Calculate Block Syndrome"""
+    syn = 0
+    for n, bit in enumerate(bits):
+        if bit:
+            syn = nmp.bitwise_xor(syn, constants.parity[n])
+    return syn
 
 def unpack_msg(frame):
+    """Unpack 104-bit Frame"""
     A = frame[:16]
     B = frame[26:42]
     C = frame[52:68]
@@ -57,10 +48,6 @@ def unpack_msg(frame):
         rt = radiotext(B, C, D)
         print rt
 
-def sync_check(self):
-    if self.pi == self.pi_sync:
-        return True
-
 def prog_id(A):
     """Program Identification"""
     A = bit2int(A)
@@ -76,7 +63,6 @@ def prog_id(A):
     pi3 = nmp.floor_divide(A - pi1 - pi2*676, 26)
     pi4 = A - pi1 - pi2*676 - pi3*26
 
-    #self.pi = pi0 + chr(pi2+65) + chr(pi3+65) + chr(pi4+65)
     return pi0 + chr(pi2+65) + chr(pi3+65) + chr(pi4+65)
 
 def prog_type(B):
@@ -94,6 +80,7 @@ def group_type(B):
     return str(gt_num) + chr(gt_ver + 65)      # 5th bit = Version (A|B)
 
 def prog_service(B, D):
+    """Program Service"""
     ps = ['_']*8
     pschr = [0,0]
     cc = bit2int(B[-2:]) - 1
@@ -103,6 +90,7 @@ def prog_service(B, D):
     return ps
 
 def radiotext(B, C, D):
+    """Radio Text"""
     rt = ['_']*64
     rtchr = [0,0,0,0]
     cc = bit2int(B[-4:])
@@ -119,11 +107,3 @@ def bit2int(bits):
     for bit in bits:
         word = (word<<1) | bit
     return int(word)
-
-def init():
-    self.pi = ''
-    self.pt = ''
-    self.gt = ''
-    self.ps = ['_']*8
-    self.rt = ['_']*64
-    self.bits = bits

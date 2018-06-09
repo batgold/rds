@@ -23,20 +23,6 @@ def plot(func):
         return memo[args]
     return wrap
 
-def demph_eq():
-    """De-Emphasis Filter"""
-    cutoff = -1 / (tau*fs/aud_dec)
-    b = [1 - nmp.exp(cutoff)]
-    a = [1, -nmp.exp(cutoff)]
-    return b, a
-
-def mono_lpf():
-    n = 4
-    cutoff = 17e3
-    w = cutoff / fs * 2
-    b, a = sig.butter(N=n, Wn=w, btype='lowpass', analog=False)
-    return b, a
-
 @memo
 def rrc():
     """Root-Raised Cosine Filter"""
@@ -80,11 +66,6 @@ def clk():
     b, a = sig.iirpeak(w, q)
     return b, a
 
-def build_lpf(self):
-    w = self.Fsym * 2 / self.Fs * self.dec_rate * 2
-    b, a = sig.butter(N=9, Wn=w, btype='lowpass', analog=False)
-    return b, a
-
 def build_costas_lpf(self):
     """COSTAS LOOP LPF"""
     N = self.costas_bw
@@ -92,3 +73,18 @@ def build_costas_lpf(self):
     a = [1, 0]
     h = sig.remez(N, f, a)
     return h
+
+def demph_eq():
+    """De-Emphasis Filter"""
+    cutoff = -1 / (tau*fs/aud_dec)
+    b = [1 - nmp.exp(cutoff)]
+    a = [1, -nmp.exp(cutoff)]
+    return b, a
+
+def mono_lpf():
+    n = 4
+    cutoff = 17e3
+    w = cutoff / fs * 2
+    b, a = sig.butter(N=n, Wn=w, btype='lowpass', analog=False)
+    return b, a
+

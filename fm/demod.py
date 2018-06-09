@@ -3,8 +3,8 @@ import numpy as nmp
 import scipy.signal as sig
 import decode
 import graph
-import constants
 import filters
+import constants
 
 def demod_fm(x):
     x = x[1:] * nmp.conj(x[:-1])
@@ -83,23 +83,6 @@ def demod_old(x, g):
     #g.run()
 
     group_sync(bits)
-
-def demod2(x, g):
-    x1 = samples[1:] * nmp.conj(samples[:-1])    # 1:end, 0:end-1
-    x2 = nmp.angle(x1)
-    x3 = sig.lfilter(self.filters.bpf[0], self.filters.bpf[1], x2) # BPF
-    crr = self.recover_carrier2(x2)  # get 57kHz carrier
-    x4 = crr * x3        # mix down to baseband
-    x5 = sig.decimate(x4, self.dec_rate, zero_phase=True)
-    x6 = 0.3*sig.lfilter(self.filters.rrc, 1, x5)
-    clk = 0.5*self.recover_clock(x5)
-    sym = self.recover_symbols(clk, x6)
-    self.bits = nmp.bitwise_xor(sym[1:], sym[:-1])
-    self.decode()
-    snr = self.calc_snr(x2)
-    self.graph.update(x2, x3, x4, phz, x6, clk, self.pi_sync, self.pt_sync, \
-        self.ps, self.rt, self.valid_group_cnt, self.group_cnt, snr)
-    #self.print_code()
 
 def recover_carrier(x):
     peak_19k = filters.peak_19k()
