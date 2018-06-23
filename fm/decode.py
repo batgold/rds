@@ -3,15 +3,17 @@ import numpy as nmp
 import graph
 import constants
 
+def decode(bits):
+    bit_start = group_sync(bits)
+    if bit_start:
+        [unpack_frame(bits[m:m+104]) for m in xrange(bit_start, len(bits)-104, 104)]
+
 def group_sync(bits):
     """Find Sync in Stream, Unpack Following Bits"""
     for n in xrange(0, len(bits)-104):
         frame = bits[n:n+104]
         if group_syndrome(frame) == constants.syndromes:
-            print 'sync'
-            break
-
-    [unpack_msg(bits[m:m+104]) for m in xrange(n-104,len(bits)-104,104)]
+            return n - 104
 
 def group_syndrome(frame):
     """Calculate Group Syndrome"""
@@ -30,7 +32,7 @@ def block_syndrome(bits):
             syn = nmp.bitwise_xor(syn, constants.parity[n])
     return syn
 
-def unpack_msg(frame):
+def unpack_frame(frame):
     """Unpack 104-bit Frame"""
     A = frame[:16]
     B = frame[26:42]
@@ -44,9 +46,10 @@ def unpack_msg(frame):
 
     if gt == '0A':
         ps = prog_service(B, D)
+        print ''.join(ps)
     elif gt == '2A':
         rt = radiotext(B, C, D)
-        print rt
+        print ''.join(rt)
 
 def prog_id(A):
     """Program Identification"""

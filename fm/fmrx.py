@@ -7,7 +7,7 @@ import player
 import constants
 import multiprocessing
 
-max_calls = 2
+max_calls = 9
 @rtlsdr.limit_calls(max_calls)
 def sdr_callback(samples, sdr):
     fm = demod.demod_fm(samples)

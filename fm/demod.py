@@ -17,8 +17,8 @@ def receive(que):
         data = que.get(timeout=5)
         if data is None:
             break
-        demod_rds(data, g)
-        #demod_old(data, g)
+        #demod_rds(data, g)
+        demod_old(data, g)
 
 def demod_rds(x, g):
     bpf_57k = filters.bpf_57k()
@@ -60,7 +60,7 @@ def demod_rds(x, g):
     g.constellation(bb_i, bb_q, rate)
     g.run()
 
-    decode.group_sync(bits)
+    decode.decode(bits)
 
 def demod_old(x, g):
     bpf_57k = filters.bpf_57k()
@@ -76,13 +76,7 @@ def demod_old(x, g):
     sym = recover_symbols(clk, x6)
     bits = nmp.bitwise_xor(sym[1:], sym[:-1])
 
-    #g.scope(x3, crr, x6)  #, symbols, bb_i)
-    #g.spectrum(x)
-    #g.spectrum2(x5)
-    #g.constellation(sym, sym, 16)
-    #g.run()
-
-    group_sync(bits)
+    decode.decode(bits)
 
 def recover_carrier(x):
     peak_19k = filters.peak_19k()
