@@ -76,7 +76,7 @@ def build_costas_lpf(self):
 
 def demph_eq():
     """De-Emphasis Filter"""
-    cutoff = -1 / (tau*fs/aud_dec)
+    cutoff = -1 / (constants.tau*constants.fs/constants.aud_dec)
     b = [1 - nmp.exp(cutoff)]
     a = [1, -nmp.exp(cutoff)]
     return b, a

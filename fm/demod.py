@@ -13,14 +13,15 @@ def demod_fm(x):
 
 def receive(que):
     g = graph.Graph()
+    rds = decode.RDS()      #<<< this is called only once
     while True:
         data = que.get(timeout=5)
         if data is None:
             break
-        #demod_rds(data, g)
-        demod_old(data, g)
+        #demod_rds(data, g, rds)
+        demod_old(data, g, rds)
 
-def demod_rds(x, g):
+def demod_rds(x, g, rds):
     bpf_57k = filters.bpf_57k()
     peak_19k = filters.peak_19k()
     lpf = filters.lpf()
@@ -54,29 +55,38 @@ def demod_rds(x, g):
     #symbols = (bb_i > 0)
     bits = nmp.bitwise_xor(symbols[1:], symbols[:-1])
 
+    g.clf()
     g.scope(x_bpf, bb_lpf, bb_dec, symbols, bb_i)
     g.spectrum(x)
     g.spectrum2(bb_dec)
     g.constellation(bb_i, bb_q, rate)
+
+    msg = decode.decode(bits, rds)
+    g.text(msg)
     g.run()
 
-    decode.decode(bits)
-
-def demod_old(x, g):
+def demod_old(x, g, rds):
     bpf_57k = filters.bpf_57k()
-    clk = filters.clk()
     rrc = filters.rrc()
 
-    x3 = sig.lfilter(bpf_57k[0], bpf_57k[1], x)
-    crr = recover_carrier(x)  # get 57kHz carrier
-    x4 = crr * x3        # mix down to baseband
-    x5 = sig.decimate(x4, constants.rds_dec, zero_phase=True)
-    x6 = 100*sig.lfilter(rrc[0], rrc[1], x5)
-    clk = recover_clock(x5)
-    sym = recover_symbols(clk, x6)
+    x_bpf = sig.lfilter(bpf_57k[0], bpf_57k[1], x)
+    pilot_57 = recover_carrier(x)  # get 57kHz carrier
+    bb = pilot_57 * x_bpf        # mix down to baseband
+    bb_dec = sig.decimate(bb, constants.rds_dec, zero_phase=True)
+    bb_rrc = 100*sig.lfilter(rrc[0], rrc[1], bb_dec)
+    clk = recover_clock(bb_dec)
+    sym = recover_symbols(clk, bb_rrc)
     bits = nmp.bitwise_xor(sym[1:], sym[:-1])
 
-    decode.decode(bits)
+    g.clf()
+    #g.scope(x_bpf, bb, bb_dec, clk, sym)
+    g.spectrum(x)
+    #g.spectrum2(bb_rrc)
+    #g.constellation(bb_i, bb_q, rate)
+
+    msg = decode.decode(bits, rds)
+    g.text(msg)
+    g.run()
 
 def recover_carrier(x):
     peak_19k = filters.peak_19k()

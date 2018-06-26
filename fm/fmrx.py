@@ -7,8 +7,8 @@ import player
 import constants
 import multiprocessing
 
-max_calls = 9
-@rtlsdr.limit_calls(max_calls)
+max_seconds = 10
+@rtlsdr.limit_time(max_seconds)
 def sdr_callback(samples, sdr):
     fm = demod.demod_fm(samples)
     aud_que.put(fm)
@@ -23,7 +23,7 @@ def read_file(filename):
 
 def read_rtlsdr(station):
     sdr = rtlsdr.RtlSdr()
-    sdr.gain = 400
+    sdr.gain = 'auto'
     sdr.sample_rate = constants.fs
     sdr.center_freq = float(station) * 1e6
     sdr.read_samples_async(

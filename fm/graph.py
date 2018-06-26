@@ -4,7 +4,6 @@ import scipy.signal as sig
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as grs
 import matplotlib.patches as pch
-import scipy.signal
 import constants
 import filters
 
@@ -17,6 +16,15 @@ def memo(func):
     return wrap
 
 class Graph:
+
+    def __init__(self):
+        self.gs = grs.GridSpec(3,3, height_ratios=[4,4,1])
+
+    def clf(self):
+        plt.clf()
+
+    def run(self):
+        plt.pause(5.1)
 
     def scope(self, x_bpf, bb_lpf, bb_dec, bb_phz, bb_i):
         #natural rate
@@ -37,29 +45,7 @@ class Graph:
         self.bb_phz = 0.2/nmp.pi*bb_phz[a:b]
         self.bb_i = bb_i[a:b]
 
-    def spectrum(self, x):
-        n = 512
-        freq, power = scipy.signal.welch(
-                x, fs=constants.fs, nfft=n, return_onesided=True)
-        self.freq = freq * 1e-3
-        self.power = 20 * nmp.log10(power)
-
-    def spectrum2(self, x):
-        n = 512
-        freq, power = scipy.signal.welch(
-                x, fs=constants.fs/constants.rds_dec, nfft=n, return_onesided=True)
-        self.freq2 = freq * 1e-3
-        self.power2 = 20 * nmp.log10(power)
-
-    def constellation(self, i, q, rate):
-        self.i = i
-        self.q = q
-
-    def run(self):
-        gs = grs.GridSpec(3,3, height_ratios=[4,4,1])
-
-        #scope
-        ax = plt.subplot(gs[0, :])
+        ax = plt.subplot(self.gs[0, :])
         ax.plot(self.time, self.x_bpf, c='C1')
         ax.plot(self.time, self.bb_lpf, c='C0', lw=1.8)
         ax.plot(self.time_dec, self.bb_dec, c='C2', ls='None', marker='D')
@@ -67,28 +53,53 @@ class Graph:
         ax.plot(self.time_dec, self.bb_i, c='m', lw=4)
         ax.set_ylim([-0.2, 0.2])
 
-        #spectrum
-        ax = plt.subplot(gs[1, 1])
+    def spectrum(self, x):
+        n = 512
+        freq, power = sig.welch(
+                x, fs=constants.fs, nfft=n, return_onesided=True)
+        self.freq = freq * 1e-3
+        self.power = 20 * nmp.log10(power)
+
+        ax = plt.subplot(self.gs[1, 1])
         ax.plot(self.freq, self.power)
         ax.set_ylim(bottom=-140)
 
-        #spectrum
-        ax = plt.subplot(gs[1, 0])
+    def spectrum2(self, x):
+        n = 512
+        freq, power = sig.welch(
+                x, fs=constants.fs/constants.rds_dec, nfft=n, return_onesided=True)
+        self.freq2 = freq * 1e-3
+        self.power2 = 20 * nmp.log10(power)
+
+        ax = plt.subplot(self.gs[1, 0])
         ax.plot(self.freq2, self.power2)
 
-        #constellation
-        ax = plt.subplot(gs[1,2])
+    def constellation(self, i, q, rate):
+        self.i = i
+        self.q = q
+        ax = plt.subplot(self.gs[1,2])
         ax.plot(self.i, self.q, ls='None', marker='.', alpha=0.5)
 
-        plt.pause(0.1)
-
-
-
-
+    def text(self, msg):
+        pi, pt, gt, ps, rt = msg
+        ax = plt.subplot(self.gs[2, 0])
+        plt.axis('off')
+        plt.text(0, 0.8, '{}'.format(ps), size=20)
+        plt.text(0, 0.2, '{}'.format(rt), size=20)
+        ax = plt.subplot(self.gs[2, 1])
+        plt.axis('off')
+        plt.text(0.5, 0.8, '{} - {}'.format(
+            pi, pt), size=20, horizontalalignment='center')
+        #plt.text(0.5, 0.8, '{}MHz - {} - {}'.format(
+            #self.station, pi, pt), size=20, horizontalalignment='center')
+        ax = plt.subplot(self.gs[2, 2])
+        plt.axis('off')
+        #plt.text(1, 0.8, '{} / {}'.format(
+            #self.v_cnt, self.cnt), size=20, horizontalalignment='right')
 
 @memo
 class Graph3:
-    "start, put, update, join"
+    """start, put, update, join"""
 
     def __init__(self):
         self.que = Queue()

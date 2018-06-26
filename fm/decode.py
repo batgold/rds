@@ -3,17 +3,46 @@ import numpy as nmp
 import graph
 import constants
 
-def decode(bits):
+class RDS():
+
+    def __init__(self):
+        self.cnt = 0
+
+    def amend(self, rds):
+        pi, pt, gt, ps, rt = rds
+
+        if not self.cnt:
+            self.pi, self.pt, self.gt, self.ps, self.rt = rds
+
+        if pi == self.pi:
+            for n, x in enumerate(ps):
+                if x != '_':
+                    self.ps[n] = x
+
+            for n, x in enumerate(rt):
+                if x != '_':
+                    self.rt[n] = x
+
+        self.cnt += 1
+        return [self.pi, self.pt, self.gt, self.ps, self.rt]
+
+def decode(bits, rds):
+    """Decode Bit Stream"""
     bit_start = group_sync(bits)
-    if bit_start:
-        [unpack_frame(bits[m:m+104]) for m in xrange(bit_start, len(bits)-104, 104)]
+    for m in xrange(bit_start, len(bits), 104):
+        frame = bits[m:m+104]
+        line = unpack_frame(frame)
+        lines = rds.amend(line)
+    msg = join_msg(lines)
+    return msg
 
 def group_sync(bits):
-    """Find Sync in Stream, Unpack Following Bits"""
+    """Find Sync in Stream"""
     for n in xrange(0, len(bits)-104):
         frame = bits[n:n+104]
         if group_syndrome(frame) == constants.syndromes:
             return n - 104
+    return 2e20             #else if never sync'd, use a large #
 
 def group_syndrome(frame):
     """Calculate Group Syndrome"""
@@ -38,18 +67,12 @@ def unpack_frame(frame):
     B = frame[26:42]
     C = frame[52:68]
     D = frame[78:94]
-
     pi = prog_id(A)
     pt = prog_type(B)
     gt = group_type(B)
-    print pi, pt, gt
-
-    if gt == '0A':
-        ps = prog_service(B, D)
-        print ''.join(ps)
-    elif gt == '2A':
-        rt = radiotext(B, C, D)
-        print ''.join(rt)
+    ps = prog_service(B, D, gt)
+    rt = radiotext(B, C, D, gt)
+    return [pi, pt, gt, ps, rt]
 
 def prog_id(A):
     """Program Identification"""
@@ -82,26 +105,28 @@ def group_type(B):
     gt_ver = B[4]
     return str(gt_num) + chr(gt_ver + 65)      # 5th bit = Version (A|B)
 
-def prog_service(B, D):
+def prog_service(B, D, gt):
     """Program Service"""
     ps = ['_']*8
-    pschr = [0,0]
-    cc = bit2int(B[-2:]) - 1
-    pschr[0] = bit2int(D[0:8])
-    pschr[1] = bit2int(D[8:16])
-    ps[2*cc:2*cc+2] = [chr(pschr[i]) if 32 < pschr[i] < 128 else '_' for i in range(0,2)]
+    if gt == '0A':
+        pschr = [0,0]
+        cc = bit2int(B[-2:]) - 1
+        pschr[0] = bit2int(D[0:8])
+        pschr[1] = bit2int(D[8:16])
+        ps[2*cc:2*cc+2] = [chr(pschr[i]) if 32 < pschr[i] < 128 else '_' for i in range(0,2)]
     return ps
 
-def radiotext(B, C, D):
+def radiotext(B, C, D, gt):
     """Radio Text"""
     rt = ['_']*64
-    rtchr = [0,0,0,0]
-    cc = bit2int(B[-4:])
-    rtchr[0] = bit2int(C[0:8])
-    rtchr[1] = bit2int(C[8:16])
-    rtchr[2] = bit2int(D[0:8])
-    rtchr[3] = bit2int(D[8:16])
-    rt[4*cc:4*cc+4] = [chr(rtchr[i]) if 32 < rtchr[i] < 128 else '_' for i in range(0,4)]
+    if gt == '2A':
+        rtchr = [0,0,0,0]
+        cc = bit2int(B[-4:])
+        rtchr[0] = bit2int(C[0:8])
+        rtchr[1] = bit2int(C[8:16])
+        rtchr[2] = bit2int(D[0:8])
+        rtchr[3] = bit2int(D[8:16])
+        rt[4*cc:4*cc+4] = [chr(rtchr[i]) if 32 < rtchr[i] < 128 else '_' for i in range(0,4)]
     return rt
 
 def bit2int(bits):
@@ -110,3 +135,9 @@ def bit2int(bits):
     for bit in bits:
         word = (word<<1) | bit
     return int(word)
+
+def join_msg(msg):
+    pi, pt, gt, ps, rt = msg
+    ps = ''.join(ps)
+    rt = ''.join(rt)
+    return [pi, pt, gt, ps, rt]
