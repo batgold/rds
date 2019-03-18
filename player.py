@@ -1,43 +1,30 @@
 #!/usr/bin/env python
-#from Queue import Queue
-#from threading import Thread
-from pyaudio import PyAudio, paInt16
-from constants import aud_dec, fa
+import pyaudio
+import mute_alsa
+import constants as co
+import scipy.signal as sg
 
-"""Stream FM Mono audio signal from RTL-SDR source."""
+def receive(que):
+    """Get Data From Demod"""
+    while True:
+        data = que.get(timeout=5)
+        if data is None:
+            break
+        play(data)
 
-class Player():
+def format(x):
+    """Format FM Signal to int16 string with 10k amplitude"""
+    x_dec = sg.decimate(x, co.aud_dec, zero_phase=True)
+    x_norm = 1e4 * x_dec/max(x_dec)
+    x_str = str(bytearray(x_norm.astype('int16')))
+    return x_str
 
-    def __init__(self):
-        self.player = PyAudio()
-        self.stream = self.player.open(format=paInt16, channels=1, rate=int(fa), output=True)
-
-    def play(self, audio):
-        self.stream.write(str(bytearray(audio)))
-
-    def close(self):
-        self.player.terminate
-        self.stream.stop_stream()
-        self.stream.close()
-
-#class Player2(Thread):
-#
-#    def __init__(self):
-#        Thread.__init__(self)
-#        self.daemon = True
-#        self.que = Queue(0)
-#        self.player = PyAudio()
-#        self.stream = self.player.open(format=paInt16, channels=1, rate=int(fa), output=True)
-#        self.start()
-#
-#    def run(self):
-#        while True:
-#            audio = self.que.get()
-#            self.que.task_done()
-#            self.stream.write(str(bytearray(audio)))
-#            break
-#
-#    def close(self):
-#        self.player.terminate
-#        self.stream.stop_stream()
-#        self.stream.close()
+def play(data):
+    """Play FM Audio"""
+    data = format(data)
+    stream = pyaudio.PyAudio().open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=int(co.fa),
+            output=True)
+    stream.write(data)

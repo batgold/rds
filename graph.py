@@ -1,172 +1,94 @@
 #!/usr/bin/env/ python
-import numpy as nmp
+import numpy as np
 import scipy.signal as sig
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as grs
 import matplotlib.patches as pch
-from scipy.signal import welch
-from constants import *
+import constants as co
 
 class Graph:
 
-    def __init__(self, Fs, Ns, station):
-        self.Fs = Fs
-        self.Ns = Ns
-        self.station = station / 1e6
-        self.dec_rate = 12
-        self.clk = []
-        self.sym = []
-        self.phz = []
-        self.amp = []
-        self.I = []
-        self.Q = []
+    def __init__(self):
+        self.gs = grs.GridSpec(3,3, height_ratios=[4,4,1])
 
-    def update(self, x2, x3, x4, phz, x6, clk, pi, pt, ps, rt, v_cnt, cnt, snr):
-        self.fm = x2
-        self.fm_bpf = x3
-        self.bb = x4
-        self.bb_rrc = x6
-        self.phz_offset = phz
-        self.clk = clk
-        self.pi = pi
-        self.pt = pt
-        self.ps = ''.join(ps)
-        self.rt = ''.join(rt)
-        self.v_cnt = v_cnt
-        self.cnt = cnt
-        self.snr = nmp.around(snr, decimals=1)
-
-        fig = plt.figure(1)
+    def clf(self):
         plt.clf()
-        #3x1 grid with narrow plot on bottom for text
-        self.gs = grs.GridSpec(3,3,
-                height_ratios=[4,4,1])
 
-        self.scope()
-        self.psd()
-        self.constellation()
-        self.text()
-        self.costas()
-        #plt.pause(3)
-        plt.show()
+    def run(self):
+        #plt.show()
+        plt.pause(6.3)
 
-        fig3 = plt.figure(2)
-        self.scope2()
-        plt.show()
+    def scope(self, **kwargs):
+        self.x_bpf = kwargs['x_bpf']
+        self.bb_lpf = kwargs['bb_lpf']
+        a = 6000
+        b = a + 960*2
+        delay = 40
 
-    def psd(self):
+        self.time = xrange(200, len(self.x_bpf)-200)
+        self.x_bpf = self.x_bpf[200-delay:-200-delay]
+        self.bb_lpf = self.bb_lpf[200:-200]
+
         ax = plt.subplot(self.gs[0, :])
-        N = 512
+        ax.plot(self.time, self.x_bpf, c='C1')
+        ax.plot(self.time, self.bb_lpf, c='C0', lw=1.8)
+        ax.set_xlim([a, b])
+        ax.set_ylim([-0.2, 0.2])
 
-        f, Y = welch(self.fm, fs=self.Fs, nfft=N, return_onesided=False)
-        f = f/1e3
-        Y = 20 * nmp.log10(Y) + 130
+    def spectrum(self, freq, x, snr):
 
-        ax.set_xlim([0, max(f)])
-        ax.set_ylim([0, 50])
-        ax.set_xticks(nmp.arange(0, max(f), 10))
-        ax.set_yticks(nmp.arange(0, 50, 5))
-        ax.set_xlabel('FREQUENCY, KHz')
-        ax.set_ylabel('POWER SPECTRAL DENSITY, dB/Hz')
-        rds = pch.Rectangle((57-2.4, 0), 4.8, 100, alpha=0.4, facecolor='m')
-        ax.add_patch(rds)
-        plt.bar(f, Y, width=0.1)
-        plt.text(57, 45, '{} dB'.format(self.snr), size=10, horizontalalignment='center')
+        x_max = np.max(x) + 20
 
-    def scope(self):
+        # Rect((left,bottom), width, height)
+        rds_patch = pch.Rectangle((57-2.4,-140), 4.8, 200, alpha=0.4, facecolor='m')
+
         ax = plt.subplot(self.gs[1, 1])
-        a = 60000
-        b = a + 600
-        t = nmp.arange(a, b)
-        t2 = nmp.arange(a,b,6)
-        y0 = self.fm_bpf[a-6:b-6]       #bpf causes 6 delay (12 taps)
-        y1 = self.bb[a-6:b-6]
-        y2 = self.bb_rrc[a/6 + 60:a/6+100 + 60] #RRC causes 60 delay (121 taps)
-        y3 = self.clk[a/6 + 60:a/6+100 + 60] #RRC causes 60 delay (121 taps)
-        plt.plot(t, y0)
-        plt.plot(t, y1)
-        plt.plot(t2, y2)
-        plt.plot(t2, y3, 'm')
+        ax.plot(freq*1e-3, x)
+        ax.text(80, x_max-5, 'SNR=%.1fdB' % (snr,), fontsize=10)
+        ax.set_ylim(bottom=-140, top=x_max)
+        ax.add_patch(rds_patch)
 
-    def scope2(self):
-        a = 50000
-        b = a + 1200
-        t = nmp.arange(a, b)
-        t2 = nmp.arange(a,b,self.dec_rate)
-        y0 = self.fm_bpf[a:b]       #bpf causes 6 delay (12 taps)
-        y1 = self.bb[a:b]
-        #y0 = self.fm_bpf[a-6:b-6]       #bpf causes 6 delay (12 taps)
-        #y1 = self.bb[a-6:b-6]
-        y2 = self.bb_rrc[a/self.dec_rate + 60:a/self.dec_rate+100 + 60] #RRC causes 60 delay (121 taps)
-        y3 = self.clk[a/self.dec_rate + 60:a/self.dec_rate+100 + 60] #RRC causes 60 delay (121 taps)
-        plt.plot(t, y0)
-        plt.plot(t, y1)
-        plt.plot(t2, y2)
-        plt.plot(t2, y3, 'm')
+    def eye(self, sym_list, sym_len, o):
+        # only plot a few, it takes a long time to plot >1000
+        ax = plt.subplot(self.gs[1,0])
+        ax.set_ylim(-0.2, 0.2)
+        for sym in sym_list[::10]:
+            ax.plot(xrange(0,int(sym_len)), sym, c='C0', alpha=0.5)
+        ax.plot([o,o],[-1,1], c='C2', lw=2)
 
-    def constellation(self):
-        ax = plt.subplot(self.gs[1, 2])
-        #ax.set_xticks([])
-        #ax.set_yticks([])
-        ax.set_xlabel(r'$\mathtt{I}$')
-        ax.set_ylabel('Q')
-        plt.plot(self.I, self.Q, '.', alpha=0.5)
-        plt.plot([-1, 1], [0,0], 'C0')
-        plt.plot([0,0], [-1, 1], 'C0')
+    def constellation(self, i, q, rate):
+        self.i = i
+        self.q = q
+        ax = plt.subplot(self.gs[1,2])
+        ax.plot(self.i, self.q, ls='None', marker='.', alpha=0.5)
 
-    def costas(self):
-        ax = plt.subplot(self.gs[1, 0])
-        plt.plot(self.phz_offset)
-
-    def text(self):
+    def text(self, msg):
+        pi, pt, gt, ps, rt, cnt = msg
         ax = plt.subplot(self.gs[2, 0])
         plt.axis('off')
-        plt.text(0, 0.8, '{}'.format(self.ps), size=20)
-        plt.text(0, 0.2, '{}'.format(self.rt), size=20)
+        plt.text(0, 0.8, 'PS: {}'.format(ps), size=20)
+        plt.text(0, 0.2, 'RT: {}'.format(rt), size=20)
         ax = plt.subplot(self.gs[2, 1])
         plt.axis('off')
-        plt.text(0.5, 0.8, '{}MHz - {} - {}'.format(self.station, self.pi,
-            self.pt), size=20, horizontalalignment='center')
+        plt.text(0.5, 0.8, '{} - {}'.format(
+            pi, pt), size=20, horizontalalignment='center')
         ax = plt.subplot(self.gs[2, 2])
         plt.axis('off')
-        plt.text(1, 0.8, '{} / {}'.format(self.v_cnt, self.cnt), size=20, \
-                horizontalalignment='right')
-
-    def time(self, samples):
-        plt.figure()
-        plt.plot(samples)
-        plt.xlabel('SAMPLES')
-        plt.ylabel('AMPLITUDE')
-        plt.show()
-
-    def time_domain(self, amp, phz, clk):
-        plt.figure()
-        plt.plot(amp, 'b.')
-        plt.plot(phz, 'r+')
-        plt.plot(clk, 'g')
-        plt.show()
-
-    def bb2(self):
-        N = 512
-        f, Y = welch(self.bb, fs=self.Fs, nfft=N, return_onesided=False)
-        f = f/1e3
-        Y = 20 * nmp.log10(Y)
-        plt.plot(f,Y)
-        #plt.psd(self.bb, NFFT=2048, Fs=self.Fs/1000)
-        #plt.psd(self.clk, NFFT=2048, Fs=F_SAMPLE/DEC_RATE/1000)
-
-    def filter_response(self, b, a):
-        w,h = sig.freqz(b,a)
-        plt.plot(w/nmp.pi*self.Fs/2/1e3, abs(h))
-        return None
+        plt.text(1, 0.8, 'CNT: {}'.format(
+            cnt), size=20, horizontalalignment='right')
 
 def response(taps):
     b = taps[0]
     a = taps[1]
     w, h = sig.freqz(b,a)
-    w = w/pi/2 * fs/1e3
-    h = nmp.log10(h)
-    plt.figure()
-    plt.plot(w,h)
-    plt.show()
+    frq = w/np.pi/2 * constants.fs/1e3
+    amp = 20*np.log10(abs(h))
+    phz = np.unwrap(np.angle(h))*180/np.pi
 
+    _, ax = plt.subplots()
+    ax.plot(frq, amp, lw=0.7)
+    ax2 = ax.twinx()
+    ax2.plot(frq, phz, c='C2', ls='--', lw=0.7)
+    plt.show(block=False)
+
+    plt.plot([0,0], [-1, 1], 'C0')

@@ -1,114 +1,90 @@
 #!/usr/bin/env python
 import numpy as nmp
-import commpy as com
-import scipy.signal as sig
-import matplotlib.pyplot as plt
-#from graph import Graph
+import commpy.filters as com
+import scipy.signal as sg
+import constants
 import graph
-from constants import *
 
-class mem(object):
-    """memorize filter state"""
-    def __init__(self, function):
-        self.function = function
-        self.filter = None
+def memo(func):
+    memo = {}
+    def wrap(*args):
+        if not args in memo:
+            memo[args] = func()
+        return memo[args]
+    return wrap
 
-    def __call__(self):
-        if not self.filter:
-            self.filter = self.function()
-            print 'mem'
-            #graph.response(self.filter)
-        return self.filter
+def plot(func):
+    memo = {}
+    def wrap(*args):
+        if not args in memo:
+            memo[args] = func()
+            #graph.response(memo[args], fs/rds_dec)
+            graph.response(memo[args])
+        return memo[args]
+    return wrap
 
-@mem
-def mono_lpf():
-    n = 4
-    cutoff = 17e3
-    w = cutoff / fs * 2
-    b, a = sig.butter(N=n, Wn=w, btype='lowpass', analog=False)
-    return b, a
-
-@mem
-def dempf_eq():
-    """De-Emphasis Filter"""
-    cutoff = -1 / (tau*fs/aud_dec)
-    b = [1 - nmp.exp(cutoff)]
-    a = [1, -nmp.exp(cutoff)]
-    return b, a
-
-def __init__(self, Fs, Fsym, dec_rate):
-    self.Fs = Fs
-    self.Fc = 57e3
-    self.Fsym = Fsym
-    self.dec_rate = dec_rate
-    self.graph = Graph(Fs, 1, 1)
-    self.costas_bw = 10
-
-    if self.Fsym == 0:
-        self.mono_lpf = self.build_mono_lpf()
-        self.de_empf = self.build_de_empf()
-    else:
-        self.fpilot = int(19e3)
-        self.rrc = self.build_rrc()
-        self.bpf = self.build_bpf()
-        #self.build_bpf2()
-        self.ipf = self.build_ipf()
-        self.clk = self.build_clk()
-        self.lpf = self.build_lpf()
-        self.costas_lpf = self.build_costas_lpf()
-
-def build_rrc(self):
-    """Cosine Filter"""
-    N = int(121)
-    T = 1/self.Fsym/2
+@memo
+def rrc():
+    """Root-Raised Cosine Filter"""
+    n = int(121)
+    T = 1/constants.fsym/2
     alfa = 1 #put 8 samples per sym period. i.e. 16+1 in the main lobe
-    __,rrc = com.filters.rrcosfilter(N, alfa, T, self.Fs/self.dec_rate)
-    return rrc
+    __, b = com.rrcosfilter(n, alfa, T, constants.fs/constants.rds_dec)
+    return b, 1
 
-def bpf():
+@memo
+def bpf_57k():
     n = 12
-    cutoff = 3.0e3          # one-sided cutoff freq, slightly larger than 2.4kHz
-    w = [(fc - cutoff) / fs*2, (fc + cutoff) / fs*2]
-    b, a = sig.butter(N=n, Wn=w, btype='bandpass', analog=False)
+    cutoff = 3.0e3      # one-sided cutoff freq, slightly larger than 2.4kHz
+    w = [(constants.fc - cutoff) / constants.fs*2,
+            (constants.fc + cutoff) / constants.fs*2]
+    b, a = sg.butter(N=n, Wn=w, btype='bandpass', analog=False)
     return b, a
 
-def build_bpf2(self):
-    """Bandpass Filter, at 57kHz"""
-    N = 2**8
-    cutoff = 3.0e3          # one-sided cutoff freq, slightly larger than 2.4kHz
-    bands = [0, self.Fc - cutoff-0.0001, self.Fc - cutoff, self.Fc + cutoff,
-            self.Fc + cutoff + 0.0001, self.Fs/2]
-    bands[:] = [b / self.Fs for b in bands]
-    desired = [0, 1, 0]
-    bpf = sig.remez(numtaps=N, bands=bands, desired=desired)
-    self.graph.filter_response(bpf, 1)
-    return bpf
+@memo
+def lpf():
+    n = 8
+    wn = 4*constants.fsym / (constants.fs/2)
+    b, a = sg.butter(
+            N=n, Wn=wn, btype='lowpass', analog=False)
+    return b, a
 
-def build_ipf(self):
+@memo
+def peak_19k():
     """Infinite (impulse response) Peak Filter at 19kHz"""
-    w = self.fpilot / float(self.Fs / 2.0)
-    q = w / 16.0 * self.Fs        # Q = f/bw, BW = 16 Hz
-    b, a = sig.iirpeak(w, q)
+    w = constants.fpil/(constants.fs/2)
+    #q = w / (500 / (constants.fs/2))        # Q = f/bw, BW = 500 Hz
+    q = w / 16.0 * constants.fs
+    b, a = sg.iirpeak(w, q)
     return b, a
 
-def build_clk(self):
+@memo
+def clk():
     """Infinite (impulse response) Peak Filter at Symbol Rate 1187.5Hz"""
-    w = self.Fsym / float(self.Fs / self.dec_rate / 2.0)
-    q = w / 4.0 * self.Fs * self.dec_rate         # Q = f/bw, BW = 4 Hz
-    b, a = sig.iirpeak(w, q)
-    #len 3
+    w = constants.fsym / float(constants.fs / constants.rds_dec / 2.0)
+    q = w / 4.0 * constants.fs * constants.rds_dec         # Q = f/bw, BW = 4 Hz
+    b, a = sg.iirpeak(w, q)
     return b, a
-
-def build_lpf(self):
-    w = self.Fsym * 2 / self.Fs * self.dec_rate * 2
-    b, a = sig.butter(N=9, Wn=w, btype='lowpass', analog=False)
-    return b, a
-
 
 def build_costas_lpf(self):
     """COSTAS LOOP LPF"""
     N = self.costas_bw
     f = [0, 0.01, 0.02, 0.5]
     a = [1, 0]
-    h = sig.remez(N, f, a)
+    h = sg.remez(N, f, a)
     return h
+
+def demph_eq():
+    """De-Emphasis Filter"""
+    cutoff = -1 / (constants.tau*constants.fs/constants.aud_dec)
+    b = [1 - nmp.exp(cutoff)]
+    a = [1, -nmp.exp(cutoff)]
+    return b, a
+
+def mono_lpf():
+    n = 4
+    cutoff = 17e3
+    w = cutoff / fs * 2
+    b, a = sg.butter(N=n, Wn=w, btype='lowpass', analog=False)
+    return b, a
+
