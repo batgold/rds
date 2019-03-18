@@ -98,10 +98,10 @@ def get_spec(x, n):
 
 def calc_snr(x, n):
     s_idx = int((co.fc+co.fsym)/co.fs*n)
-    n_idx = int(co.fc/co.fs*n)
+    n_idx = int((co.fc+3*co.fsym)/co.fs*n)  # just outside rds bw
     S = x[s_idx]
     N = x[n_idx]
-    return 20*np.log10(S/N)
+    return S - N
 
 def recover_carrier(x):
     peak_19k = filters.peak_19k()

@@ -16,7 +16,7 @@ class Graph:
 
     def run(self):
         #plt.show()
-        plt.pause(6.3)
+        plt.pause(0.5)
 
     def scope(self, **kwargs):
         self.x_bpf = kwargs['x_bpf']
