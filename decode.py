@@ -34,14 +34,14 @@ class RDS():
                 segment_persist[n] = x
 
     def _clear_msg(self, segment_persist):
-        for n in xrange(len(segment_persist)):
+        for n in range(len(segment_persist)):
             segment_persist[n] = ' '
 
 def decode(bits, g, rds):
     """Decode Bit Stream"""
     bit0 = group_sync(bits)     # returns large number if not syncd
 
-    for n in xrange(bit0, len(bits)-104, 104):
+    for n in range(bit0, len(bits)-104, 104):
         frame = bits[n:n+104]
         line = (unpack_frame(frame))
         rds.process_line(line)
