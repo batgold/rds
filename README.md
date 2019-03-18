@@ -1,4 +1,4 @@
-# radio
+# RDS (Radio Data System)
 Software Defined Radio
 
 Here are python scripts for various tasks using RTL-SDR. 
